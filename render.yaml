@@ -1,13 +1,11 @@
 services:
   - type: web
-    name: vision-rag-chatbot
-    env: python
-    plan: starter
-    buildCommand: |
-      apt-get update
-      apt-get install -y tesseract-ocr poppler-utils
-      pip install --no-cache-dir -r requirements.txt
-    startCommand: streamlit run app.py --server.address 0.0.0.0 --server.port $PORT
+    name: RAG-Based-Chatbot-System
+    runtime: docker
+    repo: https://github.com/vis-hal-git/RAG-Based-Chatbot-System
+    plan: free
+    autoDeploy: true
     envVars:
       - key: OPENAI_API_KEY
         sync: false
+
