@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.pyc
+extracted_images/
+*.pdf
+*.png
+*.jpg
