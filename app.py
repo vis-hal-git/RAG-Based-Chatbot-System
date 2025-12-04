@@ -241,43 +241,46 @@ with tab1:
                     final_passages = passages
                     final_images = images_for_llm
 
+            # Initialize answer with a default value
+            answer = "I'm sorry, I couldn't process your request."
+            
             # ---------- Summarization shortcut ----------
             lowered = user_input.strip().lower()
             if lowered.startswith("summar") or lowered in ["summary", "summary in short", "brief"]:
-                if summarize_short is not None:
-                    with st.spinner("Generating summary..."):
-                        try:
-                            summary = summarize_short(final_passages[:st.session_state.k])
-                        except Exception:
-                            # fallback: ask LLM directly with a short prompt
+                with st.spinner("Generating summary..."):
+                    try:
+                        if summarize_short is not None:
+                            answer = summarize_short(final_passages[:st.session_state.k])
+                        else:
                             combined = "\n\n".join([p["page_content"] for p in final_passages[:st.session_state.k]])
                             fallback_prompt = f"Summarize the following content in 2-3 short lines:\n\n{combined}"
-                            summary = query_openai_chat(final_passages[:st.session_state.k], final_images[:st.session_state.k], fallback_prompt)
-                else:
-                    combined = "\n\n".join([p["page_content"] for p in final_passages[:st.session_state.k]])
-                    fallback_prompt = f"Summarize the following content in 2-3 short lines:\n\n{combined}"
-                    summary = query_openai_chat(final_passages[:st.session_state.k], final_images[:st.session_state.k], fallback_prompt)
-
-                st.session_state.chat_history.append({"role":"assistant","content": summary})
-                st.chat_message("assistant").write(summary)
-
-                latency = time.time() - start_time
-                st.session_state.eval_logs.append({
-                    "query": user_input,
-                    "latency": latency,
-                    "k": st.session_state.k,
-                    "n_text_chunks": len(st.session_state.text_chunks),
-                    "n_images": len(st.session_state.image_docs),
-                    "action": "summarize"
-                })
+                            answer = query_openai_chat(final_passages[:st.session_state.k], final_images[:st.session_state.k], fallback_prompt)
+                        
+                        # Log the summary action
+                        latency = time.time() - start_time
+                        st.session_state.eval_logs.append({
+                            "query": user_input,
+                            "latency": latency,
+                            "k": st.session_state.k,
+                            "n_text_chunks": len(st.session_state.text_chunks),
+                            "n_images": len(st.session_state.image_docs),
+                            "action": "summarize"
+                        })
+                    except Exception as e:
+                        st.error(f"Error generating summary: {str(e)}")
+                        latency = 0
             else:
-                # ---------- LLM Query (vision-aware) ----------
+                # ---------- Regular LLM Query (vision-aware) ----------
                 with st.spinner("Thinking (vision + text)..."):
-                    answer = query_openai_chat(final_passages[:st.session_state.k], final_images[:st.session_state.k], user_input)
+                    try:
+                        answer = query_openai_chat(final_passages[:st.session_state.k], final_images[:st.session_state.k], user_input)
+                        latency = time.time() - start_time
+                    except Exception as e:
+                        st.error(f"Error processing your request: {str(e)}")
+                        latency = 0
+                        answer = "I'm sorry, I encountered an error processing your request."
 
-                latency = time.time() - start_time
-
-            # show assistant answer
+            # Show assistant answer
             st.session_state.chat_history.append({"role": "assistant", "content": answer})
             st.chat_message("assistant").write(answer)
 
@@ -290,5 +293,3 @@ with tab1:
                 "n_images": len(st.session_state.image_docs),
                 "action": "qa"
             })
-
-
