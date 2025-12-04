@@ -37,7 +37,7 @@ if not OPENAI_KEY:
     st.warning("OPENAI_API_KEY is not set. Set it in your environment or in a .env file and restart.")
     st.stop()
 
-st.set_page_config(page_title="Vision RAG Chatbot", layout="wide")
+st.set_page_config(page_title="RAG Based Chatbot System", layout="wide")
 st.title("Vision-RAG Chatbot — Document Q&A (silent ingestion)")
 
 # ---------------- NEW: Tabs for Chat and Evaluation Dashboard ----------------
@@ -290,3 +290,4 @@ with tab1:
                 "n_images": len(st.session_state.image_docs),
                 "action": "qa"
             })
+
