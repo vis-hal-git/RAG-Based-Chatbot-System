@@ -38,7 +38,7 @@ if not OPENAI_KEY:
     st.stop()
 
 st.set_page_config(page_title="RAG Based Chatbot System", layout="wide")
-st.title("Vision-RAG Chatbot — Document Q&A (silent ingestion)")
+st.title("RAG Based Chatbot System")
 
 # ---------------- NEW: Tabs for Chat and Evaluation Dashboard ----------------
 tab1, tab2 = st.tabs(["Chat", "Evaluation Dashboard"])
@@ -290,4 +290,5 @@ with tab1:
                 "n_images": len(st.session_state.image_docs),
                 "action": "qa"
             })
+
 
