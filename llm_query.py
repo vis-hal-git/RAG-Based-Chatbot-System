@@ -6,6 +6,8 @@ import numpy as np
 from typing import List, Dict, Any
 from openai import OpenAI
 from sklearn.metrics.pairwise import cosine_similarity
+from PIL import Image
+from sentence_transformers import SentenceTransformer
 
 # Use the new OpenAI client. Ensure OPENAI_API_KEY is set in environment or .env.
 client = OpenAI()
@@ -76,17 +78,18 @@ def get_embedding(text: str, model: str = "text-embedding-3-small") -> List[floa
     )
     return response.data[0].embedding
 
-def get_image_embedding(image_path: str, model: str = "clip-vit-base-patch32") -> List[float]:
-    """Get embedding for an image using CLIP-like model."""
-    with open(image_path, "rb") as img_file:
-        base64_image = base64.b64encode(img_file.read()).decode('utf-8')
-    
-    response = client.embeddings.create(
-        model=model,
-        input=[{"type": "image_url",
-               "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}]
-    )
-    return response.data[0].embedding
+_clip_model = None
+
+def get_image_embedding(image_path: str, model: str = "clip-ViT-B-32") -> List[float]:
+    """Get embedding for an image using CLIP sentence-transformer."""
+    global _clip_model
+    if _clip_model is None:
+        _clip_model = SentenceTransformer(model)
+        
+    img = Image.open(image_path)
+    # encode handles image input for CLIP models in sentence-transformers
+    embedding = _clip_model.encode(img)
+    return embedding.tolist()
 
 def cross_modal_rerank(question: str, passages: List[Dict], images: List[Dict]) -> List[Dict]:
     """Rerank passages and images based on cross-modal similarity to the question."""
@@ -164,10 +167,14 @@ def cross_modal_rerank(question: str, passages: List[Dict], images: List[Dict]) 
         
     return result
 
-def query_openai_chat(passages, images, question, model="gpt-4-turbo", use_reranking=True):
+def query_openai_chat(passages, images, question, model="gpt-4-turbo", use_reranking=True, chat_history=None, stream=False):
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT}
     ]
+    
+    if chat_history:
+        for msg in chat_history:
+            messages.append({"role": msg["role"], "content": msg["content"]})
     
     # Apply cross-modal reranking if enabled
     if use_reranking:
@@ -205,9 +212,17 @@ def query_openai_chat(passages, images, question, model="gpt-4-turbo", use_reran
         model=model,
         messages=messages,
         temperature=0.7,
-        max_tokens=1000
+        max_tokens=1000,
+        stream=stream
     )
 
+    if stream:
+        def stream_generator():
+            for chunk in response:
+                if chunk.choices and chunk.choices[0].delta.content is not None:
+                    yield chunk.choices[0].delta.content
+        return stream_generator()
+        
     msg = response.choices[0].message
 
     # msg.content may be string or list

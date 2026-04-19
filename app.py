@@ -3,6 +3,7 @@ import os
 import tempfile
 import shutil
 import time
+import uuid
 from dotenv import load_dotenv
 import streamlit as st
 
@@ -11,6 +12,7 @@ from ingestion import ingest
 from chunker import chunk_document
 from vectorstore_utils import build_faiss_from_chunks, save_faiss, load_faiss
 from llm_query import query_openai_chat
+from db_utils import get_all_threads, get_thread_history, save_chat_thread
 
 # optional helpers (if present in your project)
 try:
@@ -40,22 +42,7 @@ if not OPENAI_KEY:
 st.set_page_config(page_title="RAG Based Chatbot System", layout="wide")
 st.title("RAG Based Chatbot System")
 
-# ---------------- NEW: Tabs for Chat and Evaluation Dashboard ----------------
-tab1, tab2 = st.tabs(["Chat", "Evaluation Dashboard"])
 
-with tab2:
-    st.header("Retrieval Evaluation Dashboard")
-    if "eval_logs" not in st.session_state or not st.session_state.eval_logs:
-        st.info("No evaluation logs yet — start asking queries to populate metrics.")
-    else:
-        import pandas as pd
-        df = pd.DataFrame(st.session_state.eval_logs)
-        st.dataframe(df)
-        st.markdown("### Latency Summary")
-        st.write(df["latency"].describe())
-        st.markdown("### Number of Queries")
-        st.write(len(df))
-# -------------------------------------------------------------------------------
 
 # initialize session state
 if "faiss_store" not in st.session_state:
@@ -68,6 +55,8 @@ if "indexed" not in st.session_state:
     st.session_state.indexed = False
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []      # list of {"role":"user"/"assistant","content":...}
+if "thread_id" not in st.session_state:
+    st.session_state.thread_id = str(uuid.uuid4())
 if "k" not in st.session_state:
     st.session_state.k = 4
 if "eval_logs" not in st.session_state:
@@ -76,7 +65,6 @@ if "eval_logs" not in st.session_state:
 # Sidebar
 with st.sidebar:
     st.header("Settings")
-    # Hardcode k to 4 and remove from UI
     st.session_state.k = 4
     st.markdown("---")
     if st.button("Reset index & chat"):
@@ -86,7 +74,22 @@ with st.sidebar:
         st.session_state.indexed = False
         st.session_state.chat_history = []
         st.session_state.eval_logs = []
+        st.session_state.thread_id = str(uuid.uuid4())
         st.success("Reset complete")
+
+    # History UI
+    st.markdown("---")
+    st.header("Chat History")
+    threads = get_all_threads()
+    if threads:
+        for th in threads:
+            lbl = f"💬 {th.get('preview', 'New Chat')}"
+            if st.button(lbl, key=f"btn_{th['thread_id']}"):
+                st.session_state.thread_id = th["thread_id"]
+                st.session_state.chat_history = get_thread_history(th["thread_id"])
+                st.rerun()
+    else:
+        st.write("No past history.")
 
 # Helper: process upload and index text (images stored separately)
 def process_and_index(uploaded_file):
@@ -151,145 +154,151 @@ if uploaded is not None and not st.session_state.indexed:
 
 # If not indexed, instruct user
 if not st.session_state.indexed:
-    with tab1:
-        st.info("Upload a document to start the chat. The app will process it automatically (silent indexing).")
+    st.info("Upload a document to start the chat. The app will process it automatically (silent indexing).")
     st.stop()
 
-# Chat UI inside tab1
-with tab1:
-    chat_col, info_col = st.columns([3, 1])
+# Chat UI
+chat_col, info_col = st.columns([3, 1])
 
-    with info_col:
-        st.write("Status")
-        st.success("Indexed ✓")
-        st.write(f"Text chunks: {len(st.session_state.text_chunks)}")
-        st.write(f"Extracted images: {len(st.session_state.image_docs)}")
-        st.write(f"Retrieved passages (k): {st.session_state.k}")
-        st.markdown("---")
-        st.write("Tip: k is fixed to 4 to control cost.")
+with info_col:
+    st.write("Status")
+    st.success("Indexed ✓")
+    st.write(f"Text chunks: {len(st.session_state.text_chunks)}")
+    st.write(f"Extracted images: {len(st.session_state.image_docs)}")
+    st.write(f"Retrieved passages (k): {st.session_state.k}")
+    st.markdown("---")
+    st.write("Tip: k is fixed to 4 to control cost.")
 
-    with chat_col:
-        st.markdown("### Chat")
-        # display history
-        for msg in st.session_state.chat_history:
-            st.chat_message(msg["role"]).write(msg["content"])
+with chat_col:
+    st.markdown("### Chat")
+    # display history
+    for msg in st.session_state.chat_history:
+        st.chat_message(msg["role"]).write(msg["content"])
 
-        # input
-        user_input = st.chat_input("Ask a question about the uploaded document...")
-        if user_input:
-            # show user message
-            st.session_state.chat_history.append({"role": "user", "content": user_input})
-            st.chat_message("user").write(user_input)
+    # input
+    user_input = st.chat_input("Ask a question about the uploaded document...")
+    if user_input:
+        # show user message
+        st.session_state.chat_history.append({"role": "user", "content": user_input})
+        st.chat_message("user").write(user_input)
 
-            start_time = time.time()
+        start_time = time.time()
 
-            # ---------- Retrieval ----------
-            passages = []
-            images_for_llm = []
-            pages_hit = set()
+        # ---------- Retrieval ----------
+        passages = []
+        images_for_llm = []
+        pages_hit = set()
 
-            # Use hybrid_retrieve if available; otherwise use FAISS similarity_search_with_score
-            if hybrid_retrieve is not None:
-                try:
-                    candidates = hybrid_retrieve(user_input, st.session_state.text_chunks, k= max(12, st.session_state.k * 3))
-                    # candidates are list of {'content','meta', 'score'}
-                    for c in candidates:
-                        passages.append({"page_content": c["content"], "metadata": c["meta"]})
-                        meta = c.get("meta") or {}
-                        if meta.get("page") is not None:
-                            pages_hit.add(meta.get("page"))
-                        else:
-                            pages_hit.add(None)
-                except Exception:
-                    # fallback to FAISS
-                    hybrid_fallback = True
-                    hybrid_retriever = None
-
-            if (not passages) and st.session_state.faiss_store:
-                try:
-                    results = st.session_state.faiss_store.similarity_search_with_score(user_input, k=st.session_state.k)
-                except Exception:
-                    results = st.session_state.faiss_store.similarity_search_with_score(user_input, k=st.session_state.k)
-                for doc, score in results:
-                    passages.append({"page_content": doc.page_content, "metadata": doc.metadata})
-                    meta = doc.metadata or {}
+        # Use hybrid_retrieve if available; otherwise use FAISS similarity_search_with_score
+        if hybrid_retrieve is not None:
+            try:
+                candidates = hybrid_retrieve(user_input, st.session_state.text_chunks, k= max(12, st.session_state.k * 3))
+                # candidates are list of {'content','meta', 'score'}
+                for c in candidates:
+                    passages.append({"page_content": c["content"], "metadata": c["meta"]})
+                    meta = c.get("meta") or {}
                     if meta.get("page") is not None:
                         pages_hit.add(meta.get("page"))
                     else:
                         pages_hit.add(None)
+            except Exception:
+                # fallback to FAISS
+                hybrid_fallback = True
+                hybrid_retriever = None
 
-            # Collect images that are on retrieved pages (if any)
-            for img_meta in st.session_state.image_docs:
+        if (not passages) and st.session_state.faiss_store:
+            try:
+                results = st.session_state.faiss_store.similarity_search_with_score(user_input, k=st.session_state.k)
+            except Exception:
+                results = st.session_state.faiss_store.similarity_search_with_score(user_input, k=st.session_state.k)
+            for doc, score in results:
+                passages.append({"page_content": doc.page_content, "metadata": doc.metadata})
+                meta = doc.metadata or {}
+                if meta.get("page") is not None:
+                    pages_hit.add(meta.get("page"))
+                else:
+                    pages_hit.add(None)
+
+        # Collect images that are on retrieved pages (if any)
+        for img_meta in st.session_state.image_docs:
+            try:
+                img_page = img_meta.get("page")
+                if (img_page in pages_hit) or (None in pages_hit):
+                    images_for_llm.append({"image_path": img_meta.get("image_path"), "meta": img_meta})
+            except Exception:
+                continue
+
+        # ---------- Cross-modal reranking ----------
+        final_passages = passages
+        final_images = images_for_llm
+        if cross_modal_rerank is not None:
+            try:
+                # cross_modal_rerank expects text_items and image_items
+                reranked = cross_modal_rerank(user_input, passages, images_for_llm, text_weight=0.75, image_weight=0.25, top_k=st.session_state.k)
+                # partition reranked results into text passages and image docs
+                final_passages = [r for r in reranked if r.get("page_content")]
+                final_images = [r for r in reranked if r.get("image_path") or (r.get("meta") and r["meta"].get("image_path"))]
+            except Exception:
+                final_passages = passages
+                final_images = images_for_llm
+
+        # Initialize answer with a default value
+        answer = "I'm sorry, I couldn't process your request."
+        
+        # ---------- Summarization shortcut ----------
+        lowered = user_input.strip().lower()
+        if lowered.startswith("summar") or lowered in ["summary", "summary in short", "brief"]:
+            with st.spinner("Generating summary..."):
                 try:
-                    img_page = img_meta.get("page")
-                    if (img_page in pages_hit) or (None in pages_hit):
-                        images_for_llm.append({"image_path": img_meta.get("image_path"), "meta": img_meta})
-                except Exception:
-                    continue
-
-            # ---------- Cross-modal reranking ----------
-            final_passages = passages
-            final_images = images_for_llm
-            if cross_modal_rerank is not None:
+                    if summarize_short is not None:
+                        answer = summarize_short(final_passages[:st.session_state.k])
+                    else:
+                        combined = "\n\n".join([p["page_content"] for p in final_passages[:st.session_state.k]])
+                        fallback_prompt = f"Summarize the following content in 2-3 short lines:\n\n{combined}"
+                        answer = query_openai_chat(final_passages[:st.session_state.k], final_images[:st.session_state.k], fallback_prompt, chat_history=st.session_state.chat_history[:-1], stream=True)
+                    
+                    # Log the summary action
+                    latency = time.time() - start_time
+                    st.session_state.eval_logs.append({
+                        "query": user_input,
+                        "latency": latency,
+                        "k": st.session_state.k,
+                        "n_text_chunks": len(st.session_state.text_chunks),
+                        "n_images": len(st.session_state.image_docs),
+                        "action": "summarize"
+                    })
+                except Exception as e:
+                    st.error(f"Error generating summary: {str(e)}")
+                    latency = 0
+        else:
+            # ---------- Regular LLM Query (vision-aware) ----------
+            with st.spinner("Thinking (vision + text)..."):
                 try:
-                    # cross_modal_rerank expects text_items and image_items
-                    reranked = cross_modal_rerank(user_input, passages, images_for_llm, text_weight=0.75, image_weight=0.25, top_k=st.session_state.k)
-                    # partition reranked results into text passages and image docs
-                    final_passages = [r for r in reranked if r.get("page_content")]
-                    final_images = [r for r in reranked if r.get("image_path") or (r.get("meta") and r["meta"].get("image_path"))]
-                except Exception:
-                    final_passages = passages
-                    final_images = images_for_llm
+                    answer = query_openai_chat(final_passages[:st.session_state.k], final_images[:st.session_state.k], user_input, chat_history=st.session_state.chat_history[:-1], stream=True)
+                    latency = time.time() - start_time
+                except Exception as e:
+                    st.error(f"Error processing your request: {str(e)}")
+                    latency = 0
+                    answer = "I'm sorry, I encountered an error processing your request."
 
-            # Initialize answer with a default value
-            answer = "I'm sorry, I couldn't process your request."
-            
-            # ---------- Summarization shortcut ----------
-            lowered = user_input.strip().lower()
-            if lowered.startswith("summar") or lowered in ["summary", "summary in short", "brief"]:
-                with st.spinner("Generating summary..."):
-                    try:
-                        if summarize_short is not None:
-                            answer = summarize_short(final_passages[:st.session_state.k])
-                        else:
-                            combined = "\n\n".join([p["page_content"] for p in final_passages[:st.session_state.k]])
-                            fallback_prompt = f"Summarize the following content in 2-3 short lines:\n\n{combined}"
-                            answer = query_openai_chat(final_passages[:st.session_state.k], final_images[:st.session_state.k], fallback_prompt)
-                        
-                        # Log the summary action
-                        latency = time.time() - start_time
-                        st.session_state.eval_logs.append({
-                            "query": user_input,
-                            "latency": latency,
-                            "k": st.session_state.k,
-                            "n_text_chunks": len(st.session_state.text_chunks),
-                            "n_images": len(st.session_state.image_docs),
-                            "action": "summarize"
-                        })
-                    except Exception as e:
-                        st.error(f"Error generating summary: {str(e)}")
-                        latency = 0
+        # Show assistant answer
+        with st.chat_message("assistant"):
+            if isinstance(answer, str):
+                st.write(answer)
+                final_answer = answer
             else:
-                # ---------- Regular LLM Query (vision-aware) ----------
-                with st.spinner("Thinking (vision + text)..."):
-                    try:
-                        answer = query_openai_chat(final_passages[:st.session_state.k], final_images[:st.session_state.k], user_input)
-                        latency = time.time() - start_time
-                    except Exception as e:
-                        st.error(f"Error processing your request: {str(e)}")
-                        latency = 0
-                        answer = "I'm sorry, I encountered an error processing your request."
+                final_answer = st.write_stream(answer)
+        st.session_state.chat_history.append({"role": "assistant", "content": final_answer})
+        
+        # Save to MongoDB
+        save_chat_thread(st.session_state.thread_id, st.session_state.chat_history)
 
-            # Show assistant answer
-            st.session_state.chat_history.append({"role": "assistant", "content": answer})
-            st.chat_message("assistant").write(answer)
-
-            # log retrieval metrics for dashboard
-            st.session_state.eval_logs.append({
-                "query": user_input,
-                "latency": latency,
-                "k": st.session_state.k,
-                "n_text_chunks": len(st.session_state.text_chunks),
-                "n_images": len(st.session_state.image_docs),
-                "action": "qa"
-            })
+        # log retrieval metrics for dashboard
+        st.session_state.eval_logs.append({
+            "query": user_input,
+            "latency": latency,
+            "k": st.session_state.k,
+            "n_text_chunks": len(st.session_state.text_chunks),
+            "n_images": len(st.session_state.image_docs),
+            "action": "qa"
+        })
