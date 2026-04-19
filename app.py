@@ -190,7 +190,7 @@ with chat_col:
         pages_hit = set()
 
         # Use hybrid_retrieve if available; otherwise use FAISS similarity_search_with_score
-        if hybrid_retrieve is not None:
+        if hybrid_retrieve is not None and st.session_state.text_chunks:
             try:
                 candidates = hybrid_retrieve(user_input, st.session_state.text_chunks, k= max(12, st.session_state.k * 3))
                 # candidates are list of {'content','meta', 'score'}
@@ -222,9 +222,12 @@ with chat_col:
         # Collect images that are on retrieved pages (if any)
         for img_meta in st.session_state.image_docs:
             try:
+                img_path = img_meta.get("image_path")
+                if not img_path:
+                    continue
                 img_page = img_meta.get("page")
-                if (img_page in pages_hit) or (None in pages_hit):
-                    images_for_llm.append({"image_path": img_meta.get("image_path"), "meta": img_meta})
+                if (not pages_hit) or (img_page in pages_hit):
+                    images_for_llm.append({"image_path": img_path, "meta": img_meta})
             except Exception:
                 continue
 

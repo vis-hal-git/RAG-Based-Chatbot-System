@@ -63,6 +63,7 @@ You must specify a few critical keys in an active `.env` file located at the roo
 ```env
 # Required for text-generation & core vector embeddings
 OPENAI_API_KEY="sk-proj-YourKeyHere"
+OPENAI_VISION_MODEL="gpt-4o-mini"
 
 # Required for thread persistence in the UI 
 MONGO_URI="mongodb+srv://<user>:<password>@cluster0...mongodb.net/YourDB"

@@ -120,7 +120,7 @@ async def chat(request: ChatRequest):
     images_for_llm = []
     pages_hit = set()
     
-    if hybrid_retrieve is not None:
+    if hybrid_retrieve is not None and state.text_chunks:
         try:
             candidates = hybrid_retrieve(user_input, state.text_chunks, k=max(12, k * 3))
             for c in candidates:
@@ -149,9 +149,12 @@ async def chat(request: ChatRequest):
            
     for img_meta in state.image_docs:
         try:
+            img_path = img_meta.get("image_path")
+            if not img_path:
+                continue
             img_page = img_meta.get("page")
-            if (img_page in pages_hit) or (None in pages_hit):
-                images_for_llm.append({"image_path": img_meta.get("image_path"), "meta": img_meta})
+            if (not pages_hit) or (img_page in pages_hit):
+                images_for_llm.append({"image_path": img_path, "meta": img_meta})
         except Exception:
             continue
             
