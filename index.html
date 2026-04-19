@@ -1331,6 +1331,7 @@ const API = {
   upload:   '/api/upload',      // POST multipart/form-data — returns { chunks, images }
   chat:     '/api/chat',        // POST { query, k } — returns { answer, sources[] }
   reset:    '/api/reset',       // POST — returns { ok }
+  history:  '/api/history',     // GET — returns { history: [{ id, title }] }
 };
 
 // MOCK_CHAT_HISTORY removed, fetching from backend
@@ -1346,6 +1347,7 @@ const state = {
   chunks:       0,
   images:       0,
   messages:     [],
+  thread_id:    null,
 };
 
 /* ============================================================
@@ -1400,14 +1402,15 @@ function init() {
 ============================================================ */
 async function populateChatHistory() {
   try {
-    const res = await fetch('/api/history');
+    const res = await fetch(API.history);
     const data = await res.json();
     chatHistory = data.history || [];
     
     chatList.innerHTML = '';
     chatHistory.forEach(chat => {
       const el = document.createElement('div');
-      el.className = 'chat-item' + (chat.active ? ' active' : '');
+      const isActive = state.thread_id && String(chat.id) === String(state.thread_id);
+      el.className = 'chat-item' + (isActive ? ' active' : '');
       el.dataset.id = chat.id;
       el.innerHTML = `
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1415,7 +1418,7 @@ async function populateChatHistory() {
         </svg>
         <span class="chat-item-text">${chat.title}</span>
       `;
-      el.addEventListener('click', () => loadChatThread(chat.id));
+      el.addEventListener('click', () => { loadChatThread(chat.id); });
       chatList.appendChild(el);
     });
   } catch(e) {
@@ -1423,12 +1426,39 @@ async function populateChatHistory() {
   }
 }
 
-function loadChatThread(id) {
-  document.querySelectorAll('.chat-item').forEach(el => {
-    el.classList.toggle('active', el.dataset.id === id);
-  });
-  showToast('Chat thread loaded (mock)', 'info');
-  closeMobileSidebar();
+async function loadChatThread(id) {
+  try {
+    const res = await fetch(`${API.history}/${encodeURIComponent(id)}`);
+    if (!res.ok) throw new Error('Failed to load selected chat');
+
+    const data = await res.json();
+    const messages = Array.isArray(data.messages) ? data.messages : [];
+
+    state.thread_id = id;
+    state.messages = [];
+
+    messagesWrap.innerHTML = '';
+    if (messages.length === 0) {
+      messagesWrap.appendChild(emptyChat);
+      emptyChat.style.display = 'flex';
+    } else {
+      emptyChat.style.display = 'none';
+      messages.forEach(msg => {
+        const role = msg.role === 'user' ? 'user' : 'ai';
+        appendMessage(role, msg.content || '');
+      });
+    }
+
+    state.indexed = true;
+    switchToChatView();
+
+    document.querySelectorAll('.chat-item').forEach(el => {
+      el.classList.toggle('active', String(el.dataset.id) === String(id));
+    });
+    closeMobileSidebar();
+  } catch (e) {
+    showToast(e.message || 'Unable to load chat history', 'error');
+  }
 }
 
 /* ============================================================
@@ -1662,6 +1692,7 @@ async function mockChatAPI(query) {
     // store thread_id if not present
     if (data.thread_id) {
        state.thread_id = data.thread_id;
+       populateChatHistory();
     }
     return data;
   } catch(e) {
