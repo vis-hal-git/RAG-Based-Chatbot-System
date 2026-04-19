@@ -1433,9 +1433,13 @@ async function loadChatThread(id) {
 
     const data = await res.json();
     const messages = Array.isArray(data.messages) ? data.messages : [];
+    const hasContext = !!data.has_context;
 
     state.thread_id = id;
     state.messages = [];
+    state.indexed = hasContext;
+    state.chunks = Number(data.chunks || 0);
+    state.images = Number(data.images || 0);
 
     messagesWrap.innerHTML = '';
     if (messages.length === 0) {
@@ -1449,8 +1453,12 @@ async function loadChatThread(id) {
       });
     }
 
-    state.indexed = true;
     switchToChatView();
+    if (!hasContext) {
+      disableInput();
+      chatInput.placeholder = 'This chat has no saved document context. Upload a file to continue.';
+      showToast('Chat loaded, but document context is missing for follow-up questions.', 'info');
+    }
 
     document.querySelectorAll('.chat-item').forEach(el => {
       el.classList.toggle('active', String(el.dataset.id) === String(id));
@@ -1538,6 +1546,9 @@ async function runUploadStages(file) {
   state.indexed = true;
   state.chunks  = mockResponse.chunks;
   state.images  = mockResponse.images;
+  if (mockResponse.thread_id) {
+    state.thread_id = mockResponse.thread_id;
+  }
   state.uploading = false;
 
   switchToChatView();
@@ -1548,6 +1559,9 @@ async function runUploadStages(file) {
 async function mockUploadAPI(file) {
   const formData = new FormData();
   formData.append('file', file);
+  if (state.thread_id) {
+    formData.append('thread_id', state.thread_id);
+  }
   try {
     const res = await fetch(API.upload, { method: 'POST', body: formData });
     if (!res.ok) throw new Error("Upload failed");
@@ -1582,7 +1596,11 @@ function switchToChatView() {
   statImages.textContent = state.images;
   statusBanner.classList.add('visible');
 
-  enableInput();
+  if (state.indexed) {
+    enableInput();
+  } else {
+    disableInput();
+  }
 }
 
 function switchToUploadView() {
@@ -1813,6 +1831,7 @@ function setupReset() {
     state.messages  = [];
     state.chunks    = 0;
     state.images    = 0;
+    state.thread_id = null;
 
     switchToUploadView();
     showToast('Index and chat cleared', 'info');

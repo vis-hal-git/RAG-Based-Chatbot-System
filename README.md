@@ -23,6 +23,9 @@ A state-of-the-art **Multimodal Retrieval-Augmented Generation (RAG)** applicati
    - Connected seamlessly to a **MongoDB Atlas Cloud Database**, the tool autosaves every conversation you have. Previous dynamic chats are mapped securely inside a "Chat History" sidebar to reload sessions asynchronously.
 6. **Live Streaming UI:**
    - Built via Streamlit. Fully capable of OpenAI payload streaming so users don't wait awkwardly while an entire page generates.
+7. **Per-Thread Context Persistence:**
+   - Each chat thread keeps its own retrieval context (vector index + image references) so users can reopen old chats and continue asking questions without re-uploading.
+   - Original uploaded file bytes are not stored in chat history documents.
 
 ---
 

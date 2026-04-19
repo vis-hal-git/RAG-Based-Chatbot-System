@@ -3,6 +3,8 @@ import os
 import tempfile
 import shutil
 import uuid
+import json
+from pathlib import Path
 from typing import List, Optional
 
 from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException
@@ -13,7 +15,7 @@ from dotenv import load_dotenv
 # local modules
 from ingestion import ingest
 from chunker import chunk_document
-from vectorstore_utils import build_faiss_from_chunks
+from vectorstore_utils import build_faiss_from_chunks, save_faiss, load_faiss
 from llm_query import query_openai_chat
 from db_utils import get_all_threads, get_thread_history, save_chat_thread
 
@@ -30,6 +32,8 @@ except Exception:
 load_dotenv()
 
 app = FastAPI(title="RAG-Based Chatbot System API")
+CONTEXT_ROOT = Path(os.getcwd()) / "thread_contexts"
+CONTEXT_ROOT.mkdir(parents=True, exist_ok=True)
 
 # Global State (since it's a single-user system typically, mimicking st.session_state)
 class AppState:
@@ -38,8 +42,75 @@ class AppState:
         self.text_chunks = []
         self.image_docs = []
         self.indexed = False
+        self.current_thread_id = None
+        self.chunk_count = 0
+        self.image_count = 0
 
 state = AppState()
+
+def _thread_context_dir(thread_id: str) -> Path:
+    safe_thread_id = "".join(ch for ch in thread_id if ch.isalnum() or ch in ("-", "_"))
+    return CONTEXT_ROOT / safe_thread_id
+
+def _context_manifest_path(thread_id: str) -> Path:
+    return _thread_context_dir(thread_id) / "context.json"
+
+def _load_context_manifest(thread_id: str) -> Optional[dict]:
+    manifest_path = _context_manifest_path(thread_id)
+    if not manifest_path.exists():
+        return None
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def _save_thread_context(thread_id: str, faiss_store, image_docs: list, chunk_count: int):
+    ctx_dir = _thread_context_dir(thread_id)
+    ctx_dir.mkdir(parents=True, exist_ok=True)
+    faiss_dir = ctx_dir / "faiss_index"
+
+    if faiss_store is not None:
+        save_faiss(faiss_store, path_prefix=str(faiss_dir))
+    elif faiss_dir.exists():
+        shutil.rmtree(faiss_dir)
+
+    manifest = {
+        "thread_id": thread_id,
+        "chunk_count": int(chunk_count),
+        "image_count": int(len(image_docs or [])),
+        "image_docs": image_docs or [],
+        "has_faiss": faiss_store is not None
+    }
+    with open(_context_manifest_path(thread_id), "w", encoding="utf-8") as f:
+        json.dump(manifest, f)
+
+def _restore_thread_context(thread_id: str) -> bool:
+    manifest = _load_context_manifest(thread_id)
+    if not manifest:
+        state.faiss_store = None
+        state.text_chunks = []
+        state.image_docs = []
+        state.chunk_count = 0
+        state.image_count = 0
+        state.indexed = False
+        state.current_thread_id = None
+        return False
+
+    faiss_store = None
+    if manifest.get("has_faiss"):
+        faiss_dir = _thread_context_dir(thread_id) / "faiss_index"
+        if faiss_dir.exists():
+            try:
+                faiss_store = load_faiss(path_prefix=str(faiss_dir))
+            except Exception as e:
+                print(f"Failed to load FAISS for thread {thread_id}: {e}")
+
+    state.faiss_store = faiss_store
+    state.text_chunks = []  # Do not persist original chunk payloads in DB.
+    state.image_docs = manifest.get("image_docs", [])
+    state.chunk_count = int(manifest.get("chunk_count", 0))
+    state.image_count = int(manifest.get("image_count", len(state.image_docs)))
+    state.indexed = bool(state.faiss_store is not None or state.image_docs)
+    state.current_thread_id = thread_id if state.indexed else None
+    return state.indexed
 
 # Pydantic models
 class ChatRequest(BaseModel):
@@ -56,7 +127,8 @@ def read_root():
     return HTMLResponse(content=html_content)
 
 @app.post("/api/upload")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(file: UploadFile = File(...), thread_id: Optional[str] = Form(None)):
+    active_thread_id = thread_id or str(uuid.uuid4())
     tmp_dir = tempfile.mkdtemp()
     tmp_path = os.path.join(tmp_dir, file.filename)
     try:
@@ -90,11 +162,19 @@ async def upload_file(file: UploadFile = File(...)):
         else:
             state.faiss_store = None
             state.text_chunks = []
-            
+             
         state.image_docs = image_docs
-        state.indexed = True
+        state.indexed = bool(state.faiss_store is not None or state.image_docs)
+        state.current_thread_id = active_thread_id
+        state.chunk_count = len(text_chunks)
+        state.image_count = len(image_docs)
+        _save_thread_context(active_thread_id, state.faiss_store, state.image_docs, state.chunk_count)
         
-        return JSONResponse(content={"chunks": len(state.text_chunks), "images": len(state.image_docs)})
+        return JSONResponse(content={
+            "chunks": state.chunk_count,
+            "images": state.image_count,
+            "thread_id": active_thread_id
+        })
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
@@ -105,12 +185,15 @@ async def upload_file(file: UploadFile = File(...)):
 
 @app.post("/api/chat")
 async def chat(request: ChatRequest):
+    thread_id = request.thread_id or state.current_thread_id or str(uuid.uuid4())
+    if state.current_thread_id != thread_id:
+        _restore_thread_context(thread_id)
+
     if not state.indexed:
-        raise HTTPException(status_code=400, detail="No document is indexed. Please upload a document first.")
+        raise HTTPException(status_code=400, detail="No indexed document context found for this chat. Please upload a document first.")
         
     user_input = request.query
     k = 8
-    thread_id = request.thread_id or str(uuid.uuid4())
     
     # Get history
     chat_history = get_thread_history(thread_id)
@@ -182,6 +265,7 @@ async def chat(request: ChatRequest):
         
     chat_history.append({"role": "assistant", "content": answer})
     save_chat_thread(thread_id, chat_history)
+    state.current_thread_id = thread_id
     
     # We provide a clean source list for references
     source_names = []
@@ -218,7 +302,13 @@ async def get_history():
 @app.get("/api/history/{thread_id}")
 async def get_thread(thread_id: str):
     history = get_thread_history(thread_id)
-    return JSONResponse(content={"messages": history})
+    has_context = _restore_thread_context(thread_id)
+    return JSONResponse(content={
+        "messages": history,
+        "has_context": has_context,
+        "chunks": state.chunk_count,
+        "images": state.image_count
+    })
 
 if __name__ == "__main__":
     import uvicorn

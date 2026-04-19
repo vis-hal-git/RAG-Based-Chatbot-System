@@ -23,4 +23,7 @@ def save_faiss(faiss_store, path_prefix="faiss_index"):
 
 def load_faiss(path_prefix="faiss_index"):
     embedder = make_embeddings()
-    return FAISS.load_local(path_prefix, embedder)
+    try:
+        return FAISS.load_local(path_prefix, embedder, allow_dangerous_deserialization=True)
+    except TypeError:
+        return FAISS.load_local(path_prefix, embedder)
