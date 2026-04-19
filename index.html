@@ -1,0 +1,1889 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAG Chatbot System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   DESIGN TOKENS & RESET
+============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-base:      #0a0b0f;
+  --bg-surface:   #111318;
+  --bg-elevated:  #181b22;
+  --bg-glass:     rgba(255,255,255,0.04);
+  --bg-glass-hov: rgba(255,255,255,0.07);
+  --border:       rgba(255,255,255,0.08);
+  --border-hov:   rgba(255,255,255,0.15);
+  --accent:       #6c63ff;
+  --accent-soft:  rgba(108,99,255,0.15);
+  --accent-glow:  rgba(108,99,255,0.3);
+  --accent2:      #00d4aa;
+  --accent2-soft: rgba(0,212,170,0.12);
+  --text-primary:   #eef0f6;
+  --text-secondary: #8890a4;
+  --text-muted:     #4e5464;
+  --success:      #00d4aa;
+  --warning:      #f59e0b;
+  --danger:       #f87171;
+  --font-display: 'Syne', sans-serif;
+  --font-body:    'DM Sans', sans-serif;
+  --font-mono:    'DM Mono', monospace;
+  --radius-sm:  6px;
+  --radius-md:  10px;
+  --radius-lg:  16px;
+  --radius-xl:  22px;
+  --sidebar-w:  280px;
+  --transition: 0.2s cubic-bezier(0.4,0,0.2,1);
+}
+
+[data-theme="light"] {
+  --bg-base:      #f0f2f8;
+  --bg-surface:   #ffffff;
+  --bg-elevated:  #f7f8fc;
+  --bg-glass:     rgba(0,0,0,0.03);
+  --bg-glass-hov: rgba(0,0,0,0.06);
+  --border:       rgba(0,0,0,0.09);
+  --border-hov:   rgba(0,0,0,0.18);
+  --accent:       #5b52f0;
+  --accent-soft:  rgba(91,82,240,0.1);
+  --accent-glow:  rgba(91,82,240,0.25);
+  --text-primary:   #12141c;
+  --text-secondary: #5a6179;
+  --text-muted:     #a0a8be;
+  --bg-glass: rgba(0,0,0,0.03);
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.6;
+  overflow: hidden;
+}
+
+/* ============================================================
+   LAYOUT SHELL
+============================================================ */
+.app {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ============================================================
+   SIDEBAR
+============================================================ */
+.sidebar {
+  width: var(--sidebar-w);
+  min-width: var(--sidebar-w);
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  transition: transform var(--transition), opacity var(--transition);
+  z-index: 100;
+}
+
+.sidebar-header {
+  padding: 20px 18px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo-mark {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.logo-mark svg { width: 18px; height: 18px; }
+
+.sidebar-title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+}
+
+.sidebar-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.sidebar-section {
+  margin-bottom: 24px;
+}
+
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  padding: 0 4px;
+}
+
+/* Settings card */
+.settings-card {
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.setting-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.setting-badge {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 2px 8px;
+  border-radius: 20px;
+  min-width: 28px;
+  text-align: center;
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  margin-top: 4px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  transition: box-shadow var(--transition);
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  box-shadow: 0 0 0 5px var(--accent-glow);
+}
+
+/* Reset button */
+.btn-reset {
+  width: 100%;
+  padding: 10px 14px;
+  background: rgba(248,113,113,0.08);
+  border: 1px solid rgba(248,113,113,0.2);
+  border-radius: var(--radius-md);
+  color: #f87171;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  transition: all var(--transition);
+}
+
+.btn-reset:hover {
+  background: rgba(248,113,113,0.14);
+  border-color: rgba(248,113,113,0.4);
+  transform: translateY(-1px);
+}
+
+.btn-reset:active { transform: translateY(0); }
+
+/* Chat history list */
+.chat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.chat-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition);
+  color: var(--text-secondary);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 1px solid transparent;
+}
+
+.chat-item:hover {
+  background: var(--bg-glass-hov);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+.chat-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: rgba(108,99,255,0.25);
+}
+
+.chat-item svg { flex-shrink: 0; opacity: 0.6; }
+
+.chat-item-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Sidebar footer */
+.sidebar-footer {
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 5px 12px 5px 8px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  transition: all var(--transition);
+}
+
+.theme-toggle:hover {
+  background: var(--bg-glass-hov);
+  color: var(--text-primary);
+}
+
+/* ============================================================
+   MAIN CONTENT
+============================================================ */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg-base);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-base);
+  backdrop-filter: blur(20px);
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hamburger {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+}
+
+.header-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  color: var(--text-primary);
+}
+
+.header-title span {
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Status banner */
+.status-banner {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+
+.status-banner.visible { display: flex; }
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 2px rgba(0,212,170,0.3);
+  flex-shrink: 0;
+}
+
+.status-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.status-stat strong {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.status-divider {
+  width: 1px;
+  height: 12px;
+  background: var(--border);
+}
+
+/* ============================================================
+   CONTENT AREA
+============================================================ */
+.content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* ============================================================
+   UPLOAD VIEW
+============================================================ */
+.upload-view {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  overflow-y: auto;
+}
+
+.upload-container {
+  width: 100%;
+  max-width: 520px;
+}
+
+.upload-hero {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.upload-icon-wrap {
+  width: 72px;
+  height: 72px;
+  background: var(--accent-soft);
+  border-radius: var(--radius-xl);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+  border: 1px solid rgba(108,99,255,0.25);
+}
+
+.upload-hero h2 {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.upload-hero p {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+/* Dropzone */
+.dropzone {
+  background: var(--bg-surface);
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-xl);
+  padding: 40px 32px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.dropzone::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 0%, var(--accent-soft) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+
+.dropzone:hover, .dropzone.drag-over {
+  border-color: var(--accent);
+  background: var(--bg-elevated);
+  transform: translateY(-2px);
+}
+
+.dropzone:hover::before, .dropzone.drag-over::before { opacity: 1; }
+
+.dropzone.drag-over { border-style: solid; }
+
+.drop-icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 14px;
+  color: var(--accent);
+  transition: transform 0.3s ease;
+}
+
+.dropzone:hover .drop-icon { transform: translateY(-4px); }
+
+.drop-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 5px;
+  font-family: var(--font-display);
+}
+
+.drop-sub {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 18px;
+}
+
+.file-types {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.file-type-badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 9px;
+  border-radius: 4px;
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  transition: all var(--transition);
+}
+
+.dropzone:hover .file-type-badge {
+  border-color: rgba(108,99,255,0.3);
+  color: var(--accent);
+}
+
+#fileInput { display: none; }
+
+/* Upload progress */
+.upload-progress {
+  display: none;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  margin-top: 16px;
+}
+
+.upload-progress.visible { display: block; }
+
+.progress-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.progress-spinner {
+  width: 28px;
+  height: 28px;
+  border: 2.5px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.progress-info { flex: 1; min-width: 0; }
+
+.progress-filename {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-status {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.progress-track {
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  border-radius: 2px;
+  width: 0%;
+  transition: width 0.4s ease;
+}
+
+.progress-steps {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.step-pill {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.3s ease;
+}
+
+.step-pill.active {
+  background: var(--accent-soft);
+  border-color: rgba(108,99,255,0.3);
+  color: var(--accent);
+}
+
+.step-pill.done {
+  background: rgba(0,212,170,0.1);
+  border-color: rgba(0,212,170,0.25);
+  color: var(--success);
+}
+
+/* ============================================================
+   CHAT VIEW
+============================================================ */
+.chat-view {
+  display: none;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chat-view.active { display: flex; }
+
+.messages-wrap {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 24px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* Message bubbles */
+.message {
+  display: flex;
+  gap: 12px;
+  animation: msgIn 0.3s cubic-bezier(0.34,1.56,0.64,1);
+  max-width: 780px;
+}
+
+@keyframes msgIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.message.user { flex-direction: row-reverse; align-self: flex-end; }
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font-display);
+}
+
+.avatar.user-av {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #fff;
+}
+
+.avatar.ai-av {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--accent);
+}
+
+.bubble {
+  padding: 12px 16px;
+  border-radius: var(--radius-lg);
+  font-size: 14px;
+  line-height: 1.65;
+  max-width: 560px;
+  position: relative;
+}
+
+.message.user .bubble {
+  background: var(--accent);
+  color: #fff;
+  border-bottom-right-radius: var(--radius-sm);
+}
+
+.message.ai .bubble {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-bottom-left-radius: var(--radius-sm);
+}
+
+/* Markdown inside bubbles */
+.bubble p { margin-bottom: 8px; }
+.bubble p:last-child { margin-bottom: 0; }
+.bubble strong { font-weight: 600; }
+
+.bubble ul, .bubble ol {
+  padding-left: 18px;
+  margin: 8px 0;
+}
+.bubble li { margin-bottom: 4px; }
+
+.bubble code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  background: rgba(0,0,0,0.2);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.message.user .bubble code { background: rgba(255,255,255,0.2); }
+
+.bubble pre {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  overflow-x: auto;
+  margin: 10px 0;
+}
+
+.bubble pre code {
+  background: none;
+  padding: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.bubble h1, .bubble h2, .bubble h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.bubble h1 { font-size: 18px; }
+.bubble h2 { font-size: 16px; }
+.bubble h3 { font-size: 14px; }
+
+.msg-sources {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.source-chip {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  border: 1px solid rgba(108,99,255,0.2);
+  color: var(--accent);
+  font-family: var(--font-mono);
+}
+
+/* Typing indicator */
+.typing-indicator {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  padding: 0 4px;
+  animation: msgIn 0.3s ease;
+}
+
+.typing-indicator.visible { display: flex; }
+
+.typing-bubble {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  border-bottom-left-radius: var(--radius-sm);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.typing-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.typing-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.typing-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: bounce 1.4s infinite ease-in-out;
+}
+
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40%            { transform: scale(1);   opacity: 1; }
+}
+
+/* ============================================================
+   INPUT BAR
+============================================================ */
+.input-bar {
+  padding: 14px 24px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-base);
+  flex-shrink: 0;
+}
+
+.input-wrap {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 8px 8px 8px 16px;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.input-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+#chatInput {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  resize: none;
+  max-height: 140px;
+  min-height: 24px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: 4px 0;
+}
+
+#chatInput::placeholder { color: var(--text-muted); }
+
+.send-btn {
+  width: 36px;
+  height: 36px;
+  background: var(--accent);
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all var(--transition);
+  color: #fff;
+}
+
+.send-btn:hover {
+  background: #7b74ff;
+  transform: scale(1.05);
+}
+
+.send-btn:active { transform: scale(0.96); }
+
+.send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.input-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  margin-top: 8px;
+}
+
+/* ============================================================
+   MODALS & OVERLAYS
+============================================================ */
+.overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 200;
+  backdrop-filter: blur(4px);
+}
+
+.overlay.visible { display: flex; align-items: center; justify-content: center; }
+
+.modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 28px;
+  max-width: 380px;
+  width: calc(100% - 40px);
+  box-shadow: 0 24px 64px rgba(0,0,0,0.4);
+  animation: modalIn 0.25s cubic-bezier(0.34,1.56,0.64,1);
+}
+
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.modal h3 {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.modal p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.btn-cancel {
+  padding: 8px 16px;
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.btn-cancel:hover { background: var(--bg-glass-hov); color: var(--text-primary); }
+
+.btn-confirm-danger {
+  padding: 8px 16px;
+  background: rgba(248,113,113,0.1);
+  border: 1px solid rgba(248,113,113,0.3);
+  border-radius: var(--radius-md);
+  color: #f87171;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.btn-confirm-danger:hover {
+  background: rgba(248,113,113,0.18);
+  border-color: rgba(248,113,113,0.5);
+}
+
+/* ============================================================
+   EMPTY CHAT STATE
+============================================================ */
+.empty-chat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.empty-chat svg { margin-bottom: 14px; opacity: 0.4; }
+.empty-chat p { font-size: 13px; }
+
+/* ============================================================
+   TOAST NOTIFICATIONS
+============================================================ */
+.toast-stack {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: 320px;
+  animation: toastIn 0.3s ease;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.toast.success .toast-icon { color: var(--success); }
+.toast.error   .toast-icon { color: var(--danger); }
+.toast.info    .toast-icon { color: var(--accent); }
+
+/* ============================================================
+   ANIMATIONS
+============================================================ */
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============================================================
+   SCROLLBAR STYLING
+============================================================ */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-hov); }
+
+/* ============================================================
+   MOBILE RESPONSIVE
+============================================================ */
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    left: 0; top: 0; bottom: 0;
+    transform: translateX(-100%);
+    box-shadow: 4px 0 20px rgba(0,0,0,0.3);
+  }
+
+  .sidebar.open { transform: translateX(0); }
+
+  .hamburger { display: flex; }
+
+  .overlay-mobile {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 99;
+  }
+
+  .overlay-mobile.visible { display: block; }
+
+  .header { padding: 12px 16px; }
+  .messages-wrap { padding: 16px 16px 8px; }
+  .input-bar { padding: 10px 14px 14px; }
+  .upload-view { padding: 20px 16px; }
+
+  .bubble { max-width: calc(100vw - 100px); }
+
+  .status-banner { display: none !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- Mobile sidebar overlay -->
+<div class="overlay-mobile" id="mobileSidebarOverlay"></div>
+
+<!-- Reset confirm modal -->
+<div class="overlay" id="resetOverlay">
+  <div class="modal">
+    <h3>Reset everything?</h3>
+    <p>This will clear the current document index, all chat messages, and start fresh. This action cannot be undone.</p>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="cancelReset">Cancel</button>
+      <button class="btn-confirm-danger" id="confirmReset">Yes, reset</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast stack -->
+<div class="toast-stack" id="toastStack"></div>
+
+<!-- ============================================================
+     APP SHELL
+============================================================ -->
+<div class="app">
+
+  <!-- ======= SIDEBAR ======= -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+          <path d="M2 17l10 5 10-5"/>
+          <path d="M2 12l10 5 10-5"/>
+        </svg>
+      </div>
+      <span class="sidebar-title">RAG System</span>
+    </div>
+
+    <div class="sidebar-body">
+
+
+      <!-- Controls -->
+      <div class="sidebar-section">
+        <div class="section-label">Controls</div>
+        <button class="btn-reset" id="resetBtn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+            <path d="M21 3v5h-5"/>
+            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+            <path d="M8 16H3v5"/>
+          </svg>
+          Reset Index &amp; Chat
+        </button>
+      </div>
+
+      <!-- Chat History -->
+      <div class="sidebar-section">
+        <div class="section-label">History</div>
+        <div class="chat-list" id="chatList">
+          <!-- dynamically populated -->
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <button class="theme-toggle" id="themeToggle">
+        <svg id="themeIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+        <span id="themeLabel">Light mode</span>
+      </button>
+      <span style="font-size:11px;color:var(--text-muted);">v2.4</span>
+    </div>
+  </aside>
+
+  <!-- ======= MAIN ======= -->
+  <main class="main">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <button class="hamburger" id="hamburger" aria-label="Toggle sidebar">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="6" x2="21" y2="6"/>
+            <line x1="3" y1="12" x2="21" y2="12"/>
+            <line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
+        </button>
+        <h1 class="header-title">RAG <span>Chatbot</span></h1>
+      </div>
+
+      <div class="status-banner" id="statusBanner">
+        <div class="status-dot"></div>
+        <span class="status-stat">Indexed <strong>✓</strong></span>
+        <div class="status-divider"></div>
+        <span class="status-stat">Chunks <strong id="statChunks">—</strong></span>
+        <div class="status-divider"></div>
+        <span class="status-stat">Images <strong id="statImages">—</strong></span>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- ======= UPLOAD VIEW ======= -->
+      <div class="upload-view" id="uploadView">
+        <div class="upload-container">
+          <div class="upload-hero">
+            <div class="upload-icon-wrap">
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="12" y1="18" x2="12" y2="12"/>
+                <line x1="9" y1="15" x2="12" y2="12"/>
+                <line x1="15" y1="15" x2="12" y2="12"/>
+              </svg>
+            </div>
+            <h2>Upload a document</h2>
+            <p>Drop a PDF, image, or text file to index it with FAISS.<br>Then ask anything about its contents.</p>
+          </div>
+
+          <div class="dropzone" id="dropzone">
+            <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.txt">
+            <svg class="drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="16 16 12 12 8 16"/>
+              <line x1="12" y1="12" x2="12" y2="21"/>
+              <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+            </svg>
+            <p class="drop-title">Drag &amp; drop your file here</p>
+            <p class="drop-sub">or click to browse from your computer</p>
+            <div class="file-types">
+              <span class="file-type-badge">.pdf</span>
+              <span class="file-type-badge">.png</span>
+              <span class="file-type-badge">.jpg</span>
+              <span class="file-type-badge">.txt</span>
+            </div>
+          </div>
+
+          <div class="upload-progress" id="uploadProgress">
+            <div class="progress-header">
+              <div class="progress-spinner" id="progressSpinner"></div>
+              <div class="progress-info">
+                <div class="progress-filename" id="progressFilename">document.pdf</div>
+                <div class="progress-status" id="progressStatus">Uploading…</div>
+              </div>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-steps">
+              <div class="step-pill" id="step1">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Upload
+              </div>
+              <div class="step-pill" id="step2">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                OCR / Parse
+              </div>
+              <div class="step-pill" id="step3">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Chunk Text
+              </div>
+              <div class="step-pill" id="step4">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                FAISS Index
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ======= CHAT VIEW ======= -->
+      <div class="chat-view" id="chatView">
+        <div class="messages-wrap" id="messagesWrap">
+          <div class="empty-chat" id="emptyChat">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+            <p>Document indexed! Ask me anything about it.</p>
+          </div>
+        </div>
+
+        <!-- Typing indicator (inside messages area) -->
+        <div class="typing-indicator" id="typingIndicator" style="padding: 0 24px 16px;">
+          <div class="avatar ai-av">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+              <path d="M2 17l10 5 10-5"/>
+            </svg>
+          </div>
+          <div class="typing-bubble">
+            <span class="typing-label">Thinking (vision + text)…</span>
+            <div class="typing-dots">
+              <span></span><span></span><span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- .content -->
+
+    <!-- Input Bar (always visible at bottom) -->
+    <div class="input-bar" id="inputBar">
+      <div class="input-wrap">
+        <textarea
+          id="chatInput"
+          placeholder="Ask a question about your document…"
+          rows="1"
+          disabled
+        ></textarea>
+        <button class="send-btn" id="sendBtn" disabled aria-label="Send message">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="19" x2="12" y2="5"/>
+            <polyline points="5 12 12 5 19 12"/>
+          </svg>
+        </button>
+      </div>
+      <p class="input-hint">Enter to send &nbsp;·&nbsp; Shift+Enter for new line</p>
+    </div>
+
+  </main>
+</div>
+
+<!-- ============================================================
+     JAVASCRIPT
+============================================================ -->
+<script>
+/* ============================================================
+   MOCK DATA & API ENDPOINTS
+   ➜ Replace these with your real backend URLs
+============================================================ */
+const API = {
+  upload:   '/api/upload',      // POST multipart/form-data — returns { chunks, images }
+  chat:     '/api/chat',        // POST { query, k } — returns { answer, sources[] }
+  reset:    '/api/reset',       // POST — returns { ok }
+};
+
+// MOCK_CHAT_HISTORY removed, fetching from backend
+let chatHistory = [];
+
+/* ============================================================
+   STATE
+============================================================ */
+const state = {
+  indexed:      false,
+  uploading:    false,
+  responding:   false,
+  chunks:       0,
+  images:       0,
+  messages:     [],
+};
+
+/* ============================================================
+   DOM REFS
+============================================================ */
+const $ = id => document.getElementById(id);
+const uploadView    = $('uploadView');
+const chatView      = $('chatView');
+const dropzone      = $('dropzone');
+const fileInput     = $('fileInput');
+const uploadProgress= $('uploadProgress');
+const progressFill  = $('progressFill');
+const progressStatus= $('progressStatus');
+const progressFilename = $('progressFilename');
+const progressSpinner  = $('progressSpinner');
+const messagesWrap  = $('messagesWrap');
+const emptyChat     = $('emptyChat');
+const chatInput     = $('chatInput');
+const sendBtn       = $('sendBtn');
+const typingIndicator = $('typingIndicator');
+const statusBanner  = $('statusBanner');
+const statChunks    = $('statChunks');
+const statImages    = $('statImages');
+const chatList      = $('chatList');
+const resetBtn      = $('resetBtn');
+const resetOverlay  = $('resetOverlay');
+const cancelReset   = $('cancelReset');
+const confirmReset  = $('confirmReset');
+const themeToggle   = $('themeToggle');
+const themeLabel    = $('themeLabel');
+const themeIcon     = $('themeIcon');
+const sidebar       = $('sidebar');
+const hamburger     = $('hamburger');
+const mobileSidebarOverlay = $('mobileSidebarOverlay');
+const toastStack    = $('toastStack');
+
+/* ============================================================
+   INIT
+============================================================ */
+function init() {
+  populateChatHistory();
+  setupDropzone();
+  setupInput();
+  setupSidebar();
+  setupReset();
+  setupThemeToggle();
+  autoResizeTextarea();
+}
+
+/* ============================================================
+   SIDEBAR CHAT HISTORY
+============================================================ */
+async function populateChatHistory() {
+  try {
+    const res = await fetch('/api/history');
+    const data = await res.json();
+    chatHistory = data.history || [];
+    
+    chatList.innerHTML = '';
+    chatHistory.forEach(chat => {
+      const el = document.createElement('div');
+      el.className = 'chat-item' + (chat.active ? ' active' : '');
+      el.dataset.id = chat.id;
+      el.innerHTML = `
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+        <span class="chat-item-text">${chat.title}</span>
+      `;
+      el.addEventListener('click', () => loadChatThread(chat.id));
+      chatList.appendChild(el);
+    });
+  } catch(e) {
+    console.error('Failed to fetch history', e);
+  }
+}
+
+function loadChatThread(id) {
+  document.querySelectorAll('.chat-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.id === id);
+  });
+  showToast('Chat thread loaded (mock)', 'info');
+  closeMobileSidebar();
+}
+
+/* ============================================================
+   DRAG & DROP UPLOAD
+============================================================ */
+function setupDropzone() {
+  dropzone.addEventListener('click', () => fileInput.click());
+
+  fileInput.addEventListener('change', e => {
+    if (e.target.files[0]) handleFile(e.target.files[0]);
+  });
+
+  dropzone.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropzone.classList.add('drag-over');
+  });
+
+  ['dragleave', 'dragend'].forEach(ev =>
+    dropzone.addEventListener(ev, () => dropzone.classList.remove('drag-over'))
+  );
+
+  dropzone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropzone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  });
+}
+
+async function handleFile(file) {
+  const allowed = ['application/pdf','image/png','image/jpeg','text/plain'];
+  const ext = file.name.split('.').pop().toLowerCase();
+  const extAllowed = ['pdf','png','jpg','jpeg','txt'].includes(ext);
+
+  if (!allowed.includes(file.type) && !extAllowed) {
+    showToast('Unsupported file type. Use PDF, PNG, JPG, or TXT.', 'error');
+    return;
+  }
+
+  if (state.uploading) return;
+  state.uploading = true;
+
+  progressFilename.textContent = file.name;
+  uploadProgress.classList.add('visible');
+  dropzone.style.pointerEvents = 'none';
+  dropzone.style.opacity = '0.5';
+
+  /* ---- Mock upload progress ---- */
+  await runUploadStages(file);
+}
+
+async function runUploadStages(file) {
+  const steps = [
+    { el: $('step1'), label: 'Uploading file…',     pct: 25,  delay: 600  },
+    { el: $('step2'), label: 'Running OCR / parse…', pct: 55,  delay: 900  },
+    { el: $('step3'), label: 'Chunking text…',       pct: 75,  delay: 700  },
+    { el: $('step4'), label: 'Building FAISS index…',pct: 100, delay: 800  },
+  ];
+
+  for (let i = 0; i < steps.length; i++) {
+    const s = steps[i];
+    s.el.classList.add('active');
+    progressStatus.textContent = s.label;
+    await animateProgress(progressFill, s.pct);
+    await sleep(s.delay);
+    s.el.classList.remove('active');
+    s.el.classList.add('done');
+  }
+
+  /* Mock API call — replace with real fetch */
+  const mockResponse = await mockUploadAPI(file);
+
+  progressSpinner.style.borderTopColor = 'var(--accent2)';
+  progressStatus.textContent = 'Indexed successfully!';
+  await sleep(600);
+
+  state.indexed = true;
+  state.chunks  = mockResponse.chunks;
+  state.images  = mockResponse.images;
+  state.uploading = false;
+
+  switchToChatView();
+  showToast(`"${file.name}" indexed — ${mockResponse.chunks} chunks`, 'success');
+}
+
+/* ---- Real API call template ---- */
+async function mockUploadAPI(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const res = await fetch(API.upload, { method: 'POST', body: formData });
+    if (!res.ok) throw new Error("Upload failed");
+    return await res.json();
+  } catch(e) {
+    showToast(e.message, 'error');
+    throw e;
+  }
+}
+
+function animateProgress(el, targetPct) {
+  return new Promise(resolve => {
+    const current = parseFloat(el.style.width) || 0;
+    const step = (targetPct - current) / 20;
+    let val = current;
+    const t = setInterval(() => {
+      val += step;
+      if (val >= targetPct) { val = targetPct; clearInterval(t); resolve(); }
+      el.style.width = val + '%';
+    }, 16);
+  });
+}
+
+/* ============================================================
+   VIEW SWITCHING
+============================================================ */
+function switchToChatView() {
+  uploadView.style.display   = 'none';
+  chatView.classList.add('active');
+
+  statChunks.textContent = state.chunks;
+  statImages.textContent = state.images;
+  statusBanner.classList.add('visible');
+
+  enableInput();
+}
+
+function switchToUploadView() {
+  chatView.classList.remove('active');
+  uploadView.style.display = 'flex';
+  statusBanner.classList.remove('visible');
+
+  // Reset upload UI
+  uploadProgress.classList.remove('visible');
+  progressFill.style.width = '0%';
+  dropzone.style.pointerEvents = '';
+  dropzone.style.opacity = '';
+  fileInput.value = '';
+  ['step1','step2','step3','step4'].forEach(id => {
+    const el = $(id);
+    el.classList.remove('active','done');
+  });
+
+  // Clear messages
+  messagesWrap.innerHTML = '';
+  messagesWrap.appendChild(emptyChat);
+  state.messages = [];
+
+  disableInput();
+}
+
+/* ============================================================
+   CHAT INPUT
+============================================================ */
+function setupInput() {
+  chatInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  chatInput.addEventListener('input', () => {
+    autoResizeTextarea();
+    sendBtn.disabled = chatInput.value.trim() === '' || state.responding;
+  });
+
+  sendBtn.addEventListener('click', sendMessage);
+}
+
+function autoResizeTextarea() {
+  chatInput.style.height = 'auto';
+  chatInput.style.height = Math.min(chatInput.scrollHeight, 140) + 'px';
+}
+
+function enableInput() {
+  chatInput.disabled = false;
+  chatInput.placeholder = 'Ask a question about your document…';
+  chatInput.focus();
+}
+
+function disableInput() {
+  chatInput.disabled = true;
+  chatInput.value = '';
+  sendBtn.disabled = true;
+}
+
+/* ============================================================
+   SEND & RECEIVE
+============================================================ */
+async function sendMessage() {
+  const text = chatInput.value.trim();
+  if (!text || state.responding || !state.indexed) return;
+
+  state.responding = true;
+  sendBtn.disabled = true;
+
+  // Append user bubble
+  appendMessage('user', text);
+  chatInput.value = '';
+  autoResizeTextarea();
+  sendBtn.disabled = true;
+
+  // Show typing indicator
+  emptyChat.style.display = 'none';
+  typingIndicator.classList.add('visible');
+  scrollToBottom();
+
+  // Mock/Real API call
+  const response = await mockChatAPI(text);
+
+  typingIndicator.classList.remove('visible');
+  appendMessage('ai', response.answer, response.sources);
+
+  state.responding = false;
+  sendBtn.disabled = chatInput.value.trim() === '';
+}
+
+/* ---- Real chat API template ---- */
+async function mockChatAPI(query) {
+  try {
+    const bodyArgs = { query };
+    if (state.thread_id) {
+       bodyArgs.thread_id = state.thread_id;
+    }
+    const res = await fetch(API.chat, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(bodyArgs),
+    });
+    const data = await res.json();
+    // store thread_id if not present
+    if (data.thread_id) {
+       state.thread_id = data.thread_id;
+    }
+    return data;
+  } catch(e) {
+    return { answer: "Failed to reach the server.", sources: [] };
+  }
+}
+
+/* ============================================================
+   DOM: APPEND MESSAGES
+============================================================ */
+function appendMessage(role, content, sources = []) {
+  const isUser = role === 'user';
+
+  const msg = document.createElement('div');
+  msg.className = `message ${isUser ? 'user' : 'ai'}`;
+
+  const avatar = document.createElement('div');
+  avatar.className = `avatar ${isUser ? 'user-av' : 'ai-av'}`;
+  avatar.innerHTML = isUser
+    ? 'U'
+    : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+         <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+         <path d="M2 17l10 5 10-5"/>
+       </svg>`;
+
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.innerHTML = renderMarkdown(content);
+
+  if (!isUser && sources.length) {
+    const srcDiv = document.createElement('div');
+    srcDiv.className = 'msg-sources';
+    sources.forEach(s => {
+      const chip = document.createElement('span');
+      chip.className = 'source-chip';
+      chip.textContent = s;
+      srcDiv.appendChild(chip);
+    });
+    bubble.appendChild(srcDiv);
+  }
+
+  msg.appendChild(avatar);
+  msg.appendChild(bubble);
+  messagesWrap.appendChild(msg);
+
+  state.messages.push({ role, content });
+  scrollToBottom();
+}
+
+/* ============================================================
+   BASIC MARKDOWN RENDERER
+============================================================ */
+function renderMarkdown(text) {
+  // Escape HTML first
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  // Code blocks
+  text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) =>
+    `<pre><code class="lang-${lang || 'text'}">${esc(code.trim())}</code></pre>`
+  );
+
+  // Inline code
+  text = text.replace(/`([^`]+)`/g, (_, c) => `<code>${esc(c)}</code>`);
+
+  // Bold
+  text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+  // Italic
+  text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+  // Headings
+  text = text.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  text = text.replace(/^## (.+)$/gm,  '<h2>$1</h2>');
+  text = text.replace(/^# (.+)$/gm,   '<h1>$1</h1>');
+
+  // Unordered lists
+  text = text.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
+  text = text.replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`);
+
+  // Ordered lists
+  text = text.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+
+  // Line breaks → paragraphs
+  const blocks = text.split(/\n\n+/);
+  text = blocks.map(block => {
+    if (/^<(ul|ol|li|h[123]|pre)/.test(block.trim())) return block;
+    const b = block.replace(/\n/g, '<br>');
+    return b ? `<p>${b}</p>` : '';
+  }).join('');
+
+  return text;
+}
+
+
+
+/* ============================================================
+   RESET
+============================================================ */
+function setupReset() {
+  resetBtn.addEventListener('click', () => {
+    resetOverlay.classList.add('visible');
+  });
+
+  cancelReset.addEventListener('click', () => {
+    resetOverlay.classList.remove('visible');
+  });
+
+  confirmReset.addEventListener('click', async () => {
+    resetOverlay.classList.remove('visible');
+
+    /* ---- Real reset API ---- */
+    await fetch(API.reset, { method: 'POST' });
+    await sleep(300);
+
+    state.indexed   = false;
+    state.uploading = false;
+    state.responding= false;
+    state.messages  = [];
+    state.chunks    = 0;
+    state.images    = 0;
+
+    switchToUploadView();
+    showToast('Index and chat cleared', 'info');
+  });
+
+  // Close on backdrop click
+  resetOverlay.addEventListener('click', e => {
+    if (e.target === resetOverlay) resetOverlay.classList.remove('visible');
+  });
+}
+
+/* ============================================================
+   THEME TOGGLE
+============================================================ */
+function setupThemeToggle() {
+  const saved = localStorage.getItem('rag-theme') || 'dark';
+  applyTheme(saved);
+
+  themeToggle.addEventListener('click', () => {
+    const current = document.documentElement.dataset.theme;
+    applyTheme(current === 'dark' ? 'light' : 'dark');
+  });
+}
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem('rag-theme', theme);
+
+  if (theme === 'dark') {
+    themeLabel.textContent = 'Light mode';
+    themeIcon.innerHTML = `<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>`;
+  } else {
+    themeLabel.textContent = 'Dark mode';
+    themeIcon.innerHTML = `
+      <circle cx="12" cy="12" r="5"/>
+      <line x1="12" y1="1" x2="12" y2="3"/>
+      <line x1="12" y1="21" x2="12" y2="23"/>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+      <line x1="1" y1="12" x2="3" y2="12"/>
+      <line x1="21" y1="12" x2="23" y2="12"/>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+    `;
+  }
+}
+
+/* ============================================================
+   MOBILE SIDEBAR
+============================================================ */
+function setupSidebar() {
+  hamburger.addEventListener('click', () => {
+    sidebar.classList.toggle('open');
+    mobileSidebarOverlay.classList.toggle('visible');
+  });
+
+  mobileSidebarOverlay.addEventListener('click', closeMobileSidebar);
+}
+
+function closeMobileSidebar() {
+  sidebar.classList.remove('open');
+  mobileSidebarOverlay.classList.remove('visible');
+}
+
+/* ============================================================
+   TOAST NOTIFICATIONS
+============================================================ */
+function showToast(message, type = 'info') {
+  const icons = {
+    success: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`,
+    error:   `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
+    info:    `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`,
+  };
+
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.innerHTML = `<span class="toast-icon">${icons[type]}</span>${message}`;
+  toastStack.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.transition = 'opacity 0.3s, transform 0.3s';
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(8px)';
+    setTimeout(() => toast.remove(), 300);
+  }, 3500);
+}
+
+/* ============================================================
+   UTILS
+============================================================ */
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function scrollToBottom() {
+  requestAnimationFrame(() => {
+    messagesWrap.scrollTo({ top: messagesWrap.scrollHeight, behavior: 'smooth' });
+  });
+}
+
+/* ============================================================
+   BOOT
+============================================================ */
+init();
+</script>
+</body>
+</html>
