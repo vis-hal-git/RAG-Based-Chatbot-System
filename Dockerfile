@@ -1,24 +1,34 @@
-FROM python:3.10-slim
+# syntax=docker/dockerfile:1
+FROM python:3.11-slim-bookworm
 
-# Install OS-level dependencies for OCR + PDF image extraction
-RUN apt-get update && \
-    apt-get install -y tesseract-ocr poppler-utils && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Create working directory
+# System dependencies for OCR + PDF processing + OpenCV/camelot
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    poppler-utils \
+    ghostscript \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# Copy requirements
-COPY requirements.txt .
+COPY requirements.txt ./
+RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy entire project
 COPY . .
 
-# Expose Streamlit port
-EXPOSE 8501
+RUN mkdir -p extracted_images thread_contexts
 
-# Run Streamlit app
-CMD ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+# FastAPI default port
+EXPOSE 8000
+
+# Allow platforms like App Runner / ECS to inject PORT
+ENV PORT=8000
+
+CMD ["sh", "-c", "uvicorn server:app --host 0.0.0.0 --port ${PORT}"]

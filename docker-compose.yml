@@ -1,0 +1,12 @@
+services:
+  rag-chatbot:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - PORT=8000
+    volumes:
+      - ./extracted_images:/app/extracted_images
+      - ./thread_contexts:/app/thread_contexts

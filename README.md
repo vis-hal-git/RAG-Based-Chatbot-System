@@ -32,12 +32,12 @@ A state-of-the-art **Multimodal Retrieval-Augmented Generation (RAG)** applicati
 ## 🛠️ Tech Stack & Requirements
 
 ### Infrastructure & Backends
-- **Python 3.12+**
-- **Streamlit** (Frontend framework & reactivity)
+- **Python 3.11+**
+- **FastAPI** (API server)
 - **MongoDB** (Database history persistence)
 
 ### AI Tooling & Frameworks
-- **OpenAI API** (`gpt-4-turbo` for text/vision generation capability & `text-embedding-3-small` for dense vectors)
+- **OpenAI API** (`gpt-4o-mini` for text/vision generation capability & `text-embedding-3-small` for dense vectors)
 - **LangChain** (Structuring FAISS and data abstractions)
 - **Hugging Face (`sentence-transformers`) & `torchvision`** (Underlying core algorithms utilized for evaluating visual cross-modals)
 
@@ -74,18 +74,22 @@ MONGO_URI="mongodb+srv://<user>:<password>@cluster0...mongodb.net/YourDB"
 
 ### 3. Execution
 
-Launch your native application server directly through Streamlit:
+Launch the API server locally:
 
 ```bash
-streamlit run app.py
+uvicorn server:app --host 0.0.0.0 --port 8000
 ```
-*Note: Make sure that you are utilizing your active virtual environment when executing, to prevent local package collisions.*
+
+Open:
+- http://localhost:8000/ (serves `index.html`)
+- http://localhost:8000/docs (Swagger UI)
 
 ---
 
 ## 🗂️ Codebase Architecture
 
-- **`app.py`:** The primary orchestrator handling Streamlit states, managing frontend Chat flows, pushing MongoDB sync requests, and interacting directly with multimodal retrieval logic constraints.
+- **`server.py`:** FastAPI app exposing upload/chat/history endpoints and serving `index.html`.
+- **`app.py`:** Compatibility entrypoint (Streamlit removed).
 - **`ingestion.py`:** Standard handler breaking down PDFs and Images. Stores physical file derivatives cleanly into an internal `extracted_images` buffer directory.
 - **`chunker.py`:** Utility built to slice enormous text scripts down to manageable `1200` token chunks keeping critical surrounding metadata intact.
 - **`hybrid_retriever.py`:** The core search algorithm dynamically intersecting BM25 hits alongside dense scoring rules.
