@@ -832,23 +832,6 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .bubble h2 { font-size: 16px; }
 .bubble h3 { font-size: 14px; }
 
-.msg-sources {
-  display: flex;
-  gap: 6px;
-  margin-top: 10px;
-  flex-wrap: wrap;
-}
-
-.source-chip {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 4px;
-  background: var(--accent-soft);
-  border: 1px solid rgba(108,99,255,0.2);
-  color: var(--accent);
-  font-family: var(--font-mono);
-}
-
 /* Typing indicator */
 .typing-indicator {
   display: none;
@@ -1406,7 +1389,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 ============================================================ */
 const API = {
   upload:   '/api/upload',      // POST multipart/form-data — returns { chunks, images, files }
-  chat:     '/api/chat',        // POST { query, k } — returns { answer, sources[] }
+  chat:     '/api/chat',        // POST { query, k } — returns { answer }
   reset:    '/api/reset',       // POST — returns { ok }
   history:  '/api/history',     // GET — returns { history: [{ id, title }] }
 };
@@ -1799,7 +1782,7 @@ async function sendMessage() {
   const response = await mockChatAPI(text);
 
   typingIndicator.classList.remove('visible');
-  appendMessage('ai', response.answer, response.sources);
+  appendMessage('ai', response.answer);
 
   state.responding = false;
   sendBtn.disabled = chatInput.value.trim() === '';
@@ -1825,14 +1808,14 @@ async function mockChatAPI(query) {
     }
     return data;
   } catch(e) {
-    return { answer: "Failed to reach the server.", sources: [] };
+    return { answer: "Failed to reach the server." };
   }
 }
 
 /* ============================================================
    DOM: APPEND MESSAGES
 ============================================================ */
-function appendMessage(role, content, sources = []) {
+function appendMessage(role, content) {
   const isUser = role === 'user';
 
   const msg = document.createElement('div');
@@ -1850,18 +1833,6 @@ function appendMessage(role, content, sources = []) {
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
   bubble.innerHTML = renderMarkdown(content);
-
-  if (!isUser && sources.length) {
-    const srcDiv = document.createElement('div');
-    srcDiv.className = 'msg-sources';
-    sources.forEach(s => {
-      const chip = document.createElement('span');
-      chip.className = 'source-chip';
-      chip.textContent = s;
-      srcDiv.appendChild(chip);
-    });
-    bubble.appendChild(srcDiv);
-  }
 
   msg.appendChild(avatar);
   msg.appendChild(bubble);

@@ -322,19 +322,7 @@ async def chat(request: ChatRequest):
     save_chat_thread(thread_id, chat_history)
     state.current_thread_id = thread_id
     
-    # We provide a clean source list for references
-    source_names = []
-    for p in final_passages[:k]:
-        page = p['metadata'].get('page')
-        if page:
-             source_names.append(f"Page {page}")
-        else:
-             source_names.append("Text Segment")
-    
-    # De-duplicate
-    source_names = list(set(source_names))
-    
-    return JSONResponse(content={"answer": answer, "sources": source_names, "thread_id": thread_id})
+    return JSONResponse(content={"answer": answer, "thread_id": thread_id})
 
 @app.post("/api/reset")
 async def reset_state():
