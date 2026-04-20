@@ -1,6 +1,6 @@
 # 🧠 Multimodal RAG-Based Chatbot System
 
-A state-of-the-art **Multimodal Retrieval-Augmented Generation (RAG)** application built with Python, Streamlit, and OpenAI. This system goes beyond traditional text-only assistants by allowing users to upload unstructured text files, standard images, and complex PDFs, seamlessly blending OCR, local Vision embeddings, and dense-vector search functionality into a cohesive conversational UI.
+A state-of-the-art **Multimodal Retrieval-Augmented Generation (RAG)** application built with Python, FastAPI, and OpenAI. It supports uploads of text, images, and PDFs, blending OCR, local vision embeddings, and dense-vector search into a conversational API.
 
 ---
 
@@ -21,8 +21,8 @@ A state-of-the-art **Multimodal Retrieval-Augmented Generation (RAG)** applicati
 5. **Conversational Memory & State Persistence:**
    - Real-time LLM interactions are maintained logically in memory natively mapping `chat_history`.
    - Connected seamlessly to a **MongoDB Atlas Cloud Database**, the tool autosaves every conversation you have. Previous dynamic chats are mapped securely inside a "Chat History" sidebar to reload sessions asynchronously.
-6. **Live Streaming UI:**
-   - Built via Streamlit. Fully capable of OpenAI payload streaming so users don't wait awkwardly while an entire page generates.
+6. **API-first design:**
+   - FastAPI endpoints for upload/chat/history plus Swagger docs at `/docs`.
 7. **Per-Thread Context Persistence:**
    - Each chat thread keeps its own retrieval context (vector index + image references) so users can reopen old chats and continue asking questions without re-uploading.
    - Original uploaded file bytes are not stored in chat history documents.
