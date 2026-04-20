@@ -10,7 +10,7 @@ import streamlit as st
 # local modules (these must exist in the project root)
 from ingestion import ingest
 from chunker import chunk_document
-from vectorstore_utils import build_faiss_from_chunks, save_faiss, load_faiss
+from vectorstore_utils import build_faiss_from_chunks, add_chunks_to_faiss, save_faiss, load_faiss
 from llm_query import query_openai_chat
 from db_utils import get_all_threads, get_thread_history, save_chat_thread
 
@@ -61,6 +61,8 @@ if "k" not in st.session_state:
     st.session_state.k = 4
 if "eval_logs" not in st.session_state:
     st.session_state.eval_logs = []
+if "processed_files" not in st.session_state:
+    st.session_state.processed_files = set()
 
 # Sidebar
 with st.sidebar:
@@ -75,6 +77,7 @@ with st.sidebar:
         st.session_state.chat_history = []
         st.session_state.eval_logs = []
         st.session_state.thread_id = str(uuid.uuid4())
+        st.session_state.processed_files = set()
         st.success("Reset complete")
 
     # History UI
@@ -92,51 +95,55 @@ with st.sidebar:
         st.write("No past history.")
 
 # Helper: process upload and index text (images stored separately)
-def process_and_index(uploaded_file):
+def process_and_index(uploaded_files):
     tmp_dir = tempfile.mkdtemp()
-    tmp_path = os.path.join(tmp_dir, uploaded_file.name)
+    existing_chunks = list(st.session_state.text_chunks or [])
+    existing_images = list(st.session_state.image_docs or [])
+    text_chunks = []
+    image_docs = []
     try:
-        # save upload
-        with open(tmp_path, "wb") as f:
-            f.write(uploaded_file.read())
+        for idx, uploaded_file in enumerate(uploaded_files):
+            safe_name = os.path.basename(uploaded_file.name) if uploaded_file.name else f"upload_{idx}"
+            tmp_path = os.path.join(tmp_dir, f"{uuid.uuid4()}_{safe_name}")
+            # save upload
+            with open(tmp_path, "wb") as f:
+                f.write(uploaded_file.read())
 
-        # ingest returns a list of docs: {'content','meta'}
-        docs = ingest(tmp_path)
+            # ingest returns a list of docs: {'content','meta'}
+            docs = ingest(tmp_path)
 
-        text_chunks = []
-        image_docs = []
+            for d in docs:
+                meta = d.get("meta", {})
+                # If this doc is an extracted image (meta.type == "image"), save metadata separately
+                if meta.get("type") == "image" and meta.get("image_path"):
+                    image_docs.append(meta.copy())
+                    continue
 
-        for d in docs:
-            meta = d.get("meta", {})
-            # If this doc is an extracted image (meta.type == "image"), save metadata separately
-            if meta.get("type") == "image" and meta.get("image_path"):
-                image_docs.append(meta.copy())
-                continue
+                # else treat as text (including OCRed text from images)
+                content = d.get("content", "") or ""
+                if content.strip():
+                    # chunk text into LLM-friendly pieces
+                    chunks = chunk_document(content, meta)
+                    # ensure snippet + consistent meta kept
+                    for c in chunks:
+                        if "snippet" not in c["meta"]:
+                            c["meta"]["snippet"] = c["content"][:300]
+                    # standardize format to match hybrid_retriever expectations
+                    for c in chunks:
+                        text_chunks.append({"content": c["content"], "meta": c["meta"], "meta_raw": c["meta"]})
+        combined_chunks = existing_chunks + text_chunks
+        combined_images = existing_images + image_docs
 
-            # else treat as text (including OCRed text from images)
-            content = d.get("content", "") or ""
-            if content.strip():
-                # chunk text into LLM-friendly pieces
-                chunks = chunk_document(content, meta)
-                # ensure snippet + consistent meta kept
-                for c in chunks:
-                    if "snippet" not in c["meta"]:
-                        c["meta"]["snippet"] = c["content"][:300]
-                # standardize format to match hybrid_retriever expectations
-                for c in chunks:
-                    text_chunks.append({"content": c["content"], "meta": c["meta"], "meta_raw": c["meta"]})
-        # build FAISS only from text_chunks
-        if text_chunks:
-            faiss_store = build_faiss_from_chunks([{"content": t["content"], "meta": t["meta"]} for t in text_chunks])
-            st.session_state.faiss_store = faiss_store
-            st.session_state.text_chunks = text_chunks
-        else:
-            st.session_state.faiss_store = None
-            st.session_state.text_chunks = []
+        faiss_store = st.session_state.faiss_store
+        if faiss_store is not None and text_chunks:
+            add_chunks_to_faiss(faiss_store, [{"content": t["content"], "meta": t["meta"]} for t in text_chunks])
+        elif faiss_store is None and combined_chunks:
+            faiss_store = build_faiss_from_chunks([{"content": t["content"], "meta": t["meta"]} for t in combined_chunks])
 
-        # store image docs (may be empty)
-        st.session_state.image_docs = image_docs
-        st.session_state.indexed = True
+        st.session_state.faiss_store = faiss_store
+        st.session_state.text_chunks = combined_chunks
+        st.session_state.image_docs = combined_images
+        st.session_state.indexed = bool(st.session_state.faiss_store is not None or st.session_state.image_docs)
 
     finally:
         try:
@@ -145,16 +152,35 @@ def process_and_index(uploaded_file):
             pass
 
 # File uploader (silent ingestion)
-uploaded = st.file_uploader("Upload a PDF / image / text file", type=["pdf", "png", "jpg", "jpeg", "txt"])
+uploaded = st.file_uploader(
+    "Upload PDFs, images, or text files",
+    type=["pdf", "png", "jpg", "jpeg", "txt"],
+    accept_multiple_files=True
+)
 
-if uploaded is not None and not st.session_state.indexed:
-    with st.spinner("Processing document..."):
-        process_and_index(uploaded)
-    st.success("Document indexed — you can now chat with the document.", icon="💬")
+new_uploads = []
+if uploaded:
+    for f in uploaded:
+        size = getattr(f, "size", None)
+        if size is None:
+            size = len(f.getbuffer())
+        key = f"{f.name}:{size}"
+        if key not in st.session_state.processed_files:
+            new_uploads.append(f)
+            st.session_state.processed_files.add(key)
+
+if new_uploads:
+    was_indexed = st.session_state.indexed
+    with st.spinner("Processing documents..."):
+        process_and_index(new_uploads)
+    if was_indexed:
+        st.success("Documents added to the index.", icon="📎")
+    else:
+        st.success("Documents indexed — you can now chat with the documents.", icon="💬")
 
 # If not indexed, instruct user
 if not st.session_state.indexed:
-    st.info("Upload a document to start the chat. The app will process it automatically (silent indexing).")
+    st.info("Upload documents to start the chat. The app will process them automatically (silent indexing).")
     st.stop()
 
 # Chat UI

@@ -8,14 +8,14 @@ from pathlib import Path
 from typing import List, Optional
 
 from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
 # local modules
 from ingestion import ingest
 from chunker import chunk_document
-from vectorstore_utils import build_faiss_from_chunks, save_faiss, load_faiss
+from vectorstore_utils import build_faiss_from_chunks, add_chunks_to_faiss, save_faiss, load_faiss
 from llm_query import query_openai_chat
 from db_utils import get_all_threads, get_thread_history, save_chat_thread
 
@@ -35,6 +35,22 @@ app = FastAPI(title="RAG-Based Chatbot System API")
 CONTEXT_ROOT = Path(os.getcwd()) / "thread_contexts"
 CONTEXT_ROOT.mkdir(parents=True, exist_ok=True)
 
+
+@app.get("/favicon.ico")
+def favicon():
+        svg = """<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>
+    <defs>
+        <linearGradient id='g' x1='0%' y1='0%' x2='100%' y2='100%'>
+            <stop offset='0%' stop-color='#6c63ff'/>
+            <stop offset='100%' stop-color='#00d4aa'/>
+        </linearGradient>
+    </defs>
+    <rect width='64' height='64' rx='16' fill='#0a0b0f'/>
+    <path d='M18 23h28v6H18zM18 35h20v6H18z' fill='url(#g)'/>
+    <circle cx='46' cy='38' r='7' fill='none' stroke='url(#g)' stroke-width='4'/>
+</svg>"""
+        return Response(content=svg, media_type="image/svg+xml")
+
 # Global State (since it's a single-user system typically, mimicking st.session_state)
 class AppState:
     def __init__(self):
@@ -45,6 +61,7 @@ class AppState:
         self.current_thread_id = None
         self.chunk_count = 0
         self.image_count = 0
+        self.uploaded_files = []
 
 state = AppState()
 
@@ -62,7 +79,7 @@ def _load_context_manifest(thread_id: str) -> Optional[dict]:
     with open(manifest_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def _save_thread_context(thread_id: str, faiss_store, image_docs: list, chunk_count: int):
+def _save_thread_context(thread_id: str, faiss_store, image_docs: list, chunk_count: int, uploaded_files: list):
     ctx_dir = _thread_context_dir(thread_id)
     ctx_dir.mkdir(parents=True, exist_ok=True)
     faiss_dir = ctx_dir / "faiss_index"
@@ -77,7 +94,8 @@ def _save_thread_context(thread_id: str, faiss_store, image_docs: list, chunk_co
         "chunk_count": int(chunk_count),
         "image_count": int(len(image_docs or [])),
         "image_docs": image_docs or [],
-        "has_faiss": faiss_store is not None
+        "has_faiss": faiss_store is not None,
+        "uploaded_files": uploaded_files or []
     }
     with open(_context_manifest_path(thread_id), "w", encoding="utf-8") as f:
         json.dump(manifest, f)
@@ -90,6 +108,7 @@ def _restore_thread_context(thread_id: str) -> bool:
         state.image_docs = []
         state.chunk_count = 0
         state.image_count = 0
+        state.uploaded_files = []
         state.indexed = False
         state.current_thread_id = None
         return False
@@ -108,6 +127,7 @@ def _restore_thread_context(thread_id: str) -> bool:
     state.image_docs = manifest.get("image_docs", [])
     state.chunk_count = int(manifest.get("chunk_count", 0))
     state.image_count = int(manifest.get("image_count", len(state.image_docs)))
+    state.uploaded_files = list(manifest.get("uploaded_files", []))
     state.indexed = bool(state.faiss_store is not None or state.image_docs)
     state.current_thread_id = thread_id if state.indexed else None
     return state.indexed
@@ -127,53 +147,88 @@ def read_root():
     return HTMLResponse(content=html_content)
 
 @app.post("/api/upload")
-async def upload_file(file: UploadFile = File(...), thread_id: Optional[str] = Form(None)):
+async def upload_file(
+    files: Optional[List[UploadFile]] = File(None),
+    file: Optional[UploadFile] = File(None),
+    thread_id: Optional[str] = Form(None)
+):
+    upload_files = []
+    if files:
+        upload_files.extend(files)
+    if file:
+        upload_files.append(file)
+    if not upload_files:
+        raise HTTPException(status_code=400, detail="No files provided.")
+
     active_thread_id = thread_id or str(uuid.uuid4())
+    if thread_id and state.current_thread_id != thread_id:
+        _restore_thread_context(thread_id)
+
     tmp_dir = tempfile.mkdtemp()
-    tmp_path = os.path.join(tmp_dir, file.filename)
+    existing_chunks = list(state.text_chunks or [])
+    existing_images = list(state.image_docs or [])
+    existing_files = list(state.uploaded_files or [])
+    text_chunks = []
+    image_docs = []
+    new_files = []
     try:
-        with open(tmp_path, "wb") as f:
-             shutil.copyfileobj(file.file, f)
-        
-        # ingest returns a list of docs {'content', 'meta'}
-        docs = ingest(tmp_path)
-        text_chunks = []
-        image_docs = []
-        
-        for d in docs:
-            meta = d.get("meta", {})
-            if meta.get("type") == "image" and meta.get("image_path"):
-                image_docs.append(meta.copy())
+        for idx, upload in enumerate(upload_files):
+            safe_name = os.path.basename(upload.filename) if upload.filename else f"upload_{idx}"
+            new_files.append(safe_name)
+            tmp_path = os.path.join(tmp_dir, f"{uuid.uuid4()}_{safe_name}")
+            with open(tmp_path, "wb") as f:
+                shutil.copyfileobj(upload.file, f)
+
+            # ingest returns a list of docs {'content', 'meta'}
+            docs = ingest(tmp_path)
+
+            for d in docs:
+                meta = d.get("meta", {})
+                if meta.get("type") == "image" and meta.get("image_path"):
+                    image_docs.append(meta.copy())
+                    continue
+
+                content = d.get("content", "") or ""
+                if content.strip():
+                    chunks = chunk_document(content, meta)
+                    for c in chunks:
+                        if "snippet" not in c["meta"]:
+                            c["meta"]["snippet"] = c["content"][:300]
+                    for c in chunks:
+                        text_chunks.append({"content": c["content"], "meta": c["meta"], "meta_raw": c["meta"]})
+
+        combined_chunks = existing_chunks + text_chunks
+        combined_images = existing_images + image_docs
+        combined_files = []
+        seen_names = set()
+        for name in existing_files + new_files:
+            key = name.lower()
+            if key in seen_names:
                 continue
-            
-            content = d.get("content", "") or ""
-            if content.strip():
-                chunks = chunk_document(content, meta)
-                for c in chunks:
-                    if "snippet" not in c["meta"]:
-                        c["meta"]["snippet"] = c["content"][:300]
-                for c in chunks:
-                    text_chunks.append({"content": c["content"], "meta": c["meta"], "meta_raw": c["meta"]})
-                    
-        if text_chunks:
-            faiss_store = build_faiss_from_chunks([{"content": t["content"], "meta": t["meta"]} for t in text_chunks])
-            state.faiss_store = faiss_store
-            state.text_chunks = text_chunks
-        else:
-            state.faiss_store = None
-            state.text_chunks = []
-             
-        state.image_docs = image_docs
+            seen_names.add(key)
+            combined_files.append(name)
+
+        faiss_store = state.faiss_store
+        if faiss_store is not None and text_chunks:
+            add_chunks_to_faiss(faiss_store, [{"content": t["content"], "meta": t["meta"]} for t in text_chunks])
+        elif faiss_store is None and combined_chunks:
+            faiss_store = build_faiss_from_chunks([{"content": t["content"], "meta": t["meta"]} for t in combined_chunks])
+
+        state.faiss_store = faiss_store
+        state.text_chunks = combined_chunks
+        state.image_docs = combined_images
+        state.uploaded_files = combined_files
         state.indexed = bool(state.faiss_store is not None or state.image_docs)
         state.current_thread_id = active_thread_id
-        state.chunk_count = len(text_chunks)
-        state.image_count = len(image_docs)
-        _save_thread_context(active_thread_id, state.faiss_store, state.image_docs, state.chunk_count)
-        
+        state.chunk_count = len(combined_chunks)
+        state.image_count = len(combined_images)
+        _save_thread_context(active_thread_id, state.faiss_store, state.image_docs, state.chunk_count, state.uploaded_files)
+
         return JSONResponse(content={
             "chunks": state.chunk_count,
             "images": state.image_count,
-            "thread_id": active_thread_id
+            "thread_id": active_thread_id,
+            "files": state.uploaded_files
         })
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -307,7 +362,8 @@ async def get_thread(thread_id: str):
         "messages": history,
         "has_context": has_context,
         "chunks": state.chunk_count,
-        "images": state.image_count
+        "images": state.image_count,
+        "files": state.uploaded_files
     })
 
 if __name__ == "__main__":

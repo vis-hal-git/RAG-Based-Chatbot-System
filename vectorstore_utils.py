@@ -18,6 +18,11 @@ def build_faiss_from_chunks(chunks):
     faiss_store = FAISS.from_documents(docs, embedder)
     return faiss_store
 
+def add_chunks_to_faiss(faiss_store, chunks):
+    docs = [Document(page_content=c["content"], metadata=c["meta"]) for c in chunks]
+    faiss_store.add_documents(docs)
+    return faiss_store
+
 def save_faiss(faiss_store, path_prefix="faiss_index"):
     faiss_store.save_local(path_prefix)
 

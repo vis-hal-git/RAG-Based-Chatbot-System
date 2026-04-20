@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RAG Chatbot System</title>
+<link rel="icon" href="/favicon.ico" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -228,6 +229,33 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 .btn-reset:active { transform: translateY(0); }
+
+/* Secondary button */
+.btn-secondary {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  transition: all var(--transition);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-glass-hov);
+  border-color: rgba(99,102,241,0.5);
+  transform: translateY(-1px);
+}
+
+.btn-secondary:active { transform: translateY(0); }
 
 /* Chat history list */
 .chat-list {
@@ -646,6 +674,44 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 .chat-view.active { display: flex; }
+
+.uploads-bar {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+.uploads-bar.visible { display: flex; }
+
+.uploads-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.uploads-list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.upload-chip {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .messages-wrap {
   flex: 1;
@@ -1142,6 +1208,13 @@ input[type="range"]::-webkit-slider-thumb:hover {
       <!-- Controls -->
       <div class="sidebar-section">
         <div class="section-label">Controls</div>
+        <button class="btn-secondary" id="addFilesBtn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Add Files to Index
+        </button>
         <button class="btn-reset" id="resetBtn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
@@ -1213,18 +1286,18 @@ input[type="range"]::-webkit-slider-thumb:hover {
                 <line x1="15" y1="15" x2="12" y2="12"/>
               </svg>
             </div>
-            <h2>Upload a document</h2>
-            <p>Drop a PDF, image, or text file to index it with FAISS.<br>Then ask anything about its contents.</p>
+            <h2>Upload documents</h2>
+            <p>Drop PDFs, images, or text files to index them with FAISS.<br>Then ask anything about their contents.</p>
           </div>
 
           <div class="dropzone" id="dropzone">
-            <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.txt">
+            <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.txt" multiple>
             <svg class="drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="16 16 12 12 8 16"/>
               <line x1="12" y1="12" x2="12" y2="21"/>
               <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
             </svg>
-            <p class="drop-title">Drag &amp; drop your file here</p>
+            <p class="drop-title">Drag &amp; drop your files here</p>
             <p class="drop-sub">or click to browse from your computer</p>
             <div class="file-types">
               <span class="file-type-badge">.pdf</span>
@@ -1269,6 +1342,10 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
       <!-- ======= CHAT VIEW ======= -->
       <div class="chat-view" id="chatView">
+        <div class="uploads-bar" id="uploadsBar">
+          <span class="uploads-label">Files</span>
+          <div class="uploads-list" id="uploadsList"></div>
+        </div>
         <div class="messages-wrap" id="messagesWrap">
           <div class="empty-chat" id="emptyChat">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
@@ -1328,7 +1405,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
    ➜ Replace these with your real backend URLs
 ============================================================ */
 const API = {
-  upload:   '/api/upload',      // POST multipart/form-data — returns { chunks, images }
+  upload:   '/api/upload',      // POST multipart/form-data — returns { chunks, images, files }
   chat:     '/api/chat',        // POST { query, k } — returns { answer, sources[] }
   reset:    '/api/reset',       // POST — returns { ok }
   history:  '/api/history',     // GET — returns { history: [{ id, title }] }
@@ -1346,6 +1423,7 @@ const state = {
   responding:   false,
   chunks:       0,
   images:       0,
+  files:        [],
   messages:     [],
   thread_id:    null,
 };
@@ -1371,7 +1449,10 @@ const typingIndicator = $('typingIndicator');
 const statusBanner  = $('statusBanner');
 const statChunks    = $('statChunks');
 const statImages    = $('statImages');
+const uploadsBar   = $('uploadsBar');
+const uploadsList  = $('uploadsList');
 const chatList      = $('chatList');
+const addFilesBtn   = $('addFilesBtn');
 const resetBtn      = $('resetBtn');
 const resetOverlay  = $('resetOverlay');
 const cancelReset   = $('cancelReset');
@@ -1392,6 +1473,7 @@ function init() {
   setupDropzone();
   setupInput();
   setupSidebar();
+  setupAddFiles();
   setupReset();
   setupThemeToggle();
   autoResizeTextarea();
@@ -1426,6 +1508,23 @@ async function populateChatHistory() {
   }
 }
 
+function renderUploads() {
+  if (!uploadsBar || !uploadsList) return;
+  const files = Array.isArray(state.files) ? state.files : [];
+  uploadsList.innerHTML = '';
+  if (!files.length) {
+    uploadsBar.classList.remove('visible');
+    return;
+  }
+  files.forEach(name => {
+    const chip = document.createElement('span');
+    chip.className = 'upload-chip';
+    chip.textContent = name;
+    uploadsList.appendChild(chip);
+  });
+  uploadsBar.classList.add('visible');
+}
+
 async function loadChatThread(id) {
   try {
     const res = await fetch(`${API.history}/${encodeURIComponent(id)}`);
@@ -1440,6 +1539,8 @@ async function loadChatThread(id) {
     state.indexed = hasContext;
     state.chunks = Number(data.chunks || 0);
     state.images = Number(data.images || 0);
+    state.files = Array.isArray(data.files) ? data.files : [];
+    renderUploads();
 
     messagesWrap.innerHTML = '';
     if (messages.length === 0) {
@@ -1456,7 +1557,7 @@ async function loadChatThread(id) {
     switchToChatView();
     if (!hasContext) {
       disableInput();
-      chatInput.placeholder = 'This chat has no saved document context. Upload a file to continue.';
+      chatInput.placeholder = 'This chat has no saved document context. Upload files to continue.';
       showToast('Chat loaded, but document context is missing for follow-up questions.', 'info');
     }
 
@@ -1476,7 +1577,8 @@ function setupDropzone() {
   dropzone.addEventListener('click', () => fileInput.click());
 
   fileInput.addEventListener('change', e => {
-    if (e.target.files[0]) handleFile(e.target.files[0]);
+    const files = Array.from(e.target.files || []);
+    if (files.length) handleFiles(files);
   });
 
   dropzone.addEventListener('dragover', e => {
@@ -1491,17 +1593,20 @@ function setupDropzone() {
   dropzone.addEventListener('drop', e => {
     e.preventDefault();
     dropzone.classList.remove('drag-over');
-    const file = e.dataTransfer.files[0];
-    if (file) handleFile(file);
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length) handleFiles(files);
   });
 }
 
-async function handleFile(file) {
+async function handleFiles(files) {
   const allowed = ['application/pdf','image/png','image/jpeg','text/plain'];
-  const ext = file.name.split('.').pop().toLowerCase();
-  const extAllowed = ['pdf','png','jpg','jpeg','txt'].includes(ext);
+  const extAllowed = ['pdf','png','jpg','jpeg','txt'];
+  const invalidFiles = files.filter(file => {
+    const ext = file.name.split('.').pop().toLowerCase();
+    return !allowed.includes(file.type) && !extAllowed.includes(ext);
+  });
 
-  if (!allowed.includes(file.type) && !extAllowed) {
+  if (invalidFiles.length) {
     showToast('Unsupported file type. Use PDF, PNG, JPG, or TXT.', 'error');
     return;
   }
@@ -1509,18 +1614,19 @@ async function handleFile(file) {
   if (state.uploading) return;
   state.uploading = true;
 
-  progressFilename.textContent = file.name;
+  progressFilename.textContent = files.length === 1 ? files[0].name : `${files.length} files`;
   uploadProgress.classList.add('visible');
   dropzone.style.pointerEvents = 'none';
   dropzone.style.opacity = '0.5';
 
   /* ---- Mock upload progress ---- */
-  await runUploadStages(file);
+  await runUploadStages(files);
 }
 
-async function runUploadStages(file) {
+async function runUploadStages(files) {
+  const uploadLabel = files.length === 1 ? 'Uploading file…' : `Uploading ${files.length} files…`;
   const steps = [
-    { el: $('step1'), label: 'Uploading file…',     pct: 25,  delay: 600  },
+    { el: $('step1'), label: uploadLabel,            pct: 25,  delay: 600  },
     { el: $('step2'), label: 'Running OCR / parse…', pct: 55,  delay: 900  },
     { el: $('step3'), label: 'Chunking text…',       pct: 75,  delay: 700  },
     { el: $('step4'), label: 'Building FAISS index…',pct: 100, delay: 800  },
@@ -1537,7 +1643,7 @@ async function runUploadStages(file) {
   }
 
   /* Mock API call — replace with real fetch */
-  const mockResponse = await mockUploadAPI(file);
+  const mockResponse = await mockUploadAPI(files);
 
   progressSpinner.style.borderTopColor = 'var(--accent2)';
   progressStatus.textContent = 'Indexed successfully!';
@@ -1546,19 +1652,22 @@ async function runUploadStages(file) {
   state.indexed = true;
   state.chunks  = mockResponse.chunks;
   state.images  = mockResponse.images;
+  state.files   = Array.isArray(mockResponse.files) ? mockResponse.files : [];
   if (mockResponse.thread_id) {
     state.thread_id = mockResponse.thread_id;
   }
   state.uploading = false;
 
   switchToChatView();
-  showToast(`"${file.name}" indexed — ${mockResponse.chunks} chunks`, 'success');
+  renderUploads();
+  const toastLabel = files.length === 1 ? `"${files[0].name}"` : `${files.length} files`;
+  showToast(`${toastLabel} indexed — ${mockResponse.chunks} chunks`, 'success');
 }
 
 /* ---- Real API call template ---- */
-async function mockUploadAPI(file) {
+async function mockUploadAPI(files) {
   const formData = new FormData();
-  formData.append('file', file);
+  files.forEach(file => formData.append('files', file));
   if (state.thread_id) {
     formData.append('thread_id', state.thread_id);
   }
@@ -1603,7 +1712,7 @@ function switchToChatView() {
   }
 }
 
-function switchToUploadView() {
+function switchToUploadView({ preserveChat = false } = {}) {
   chatView.classList.remove('active');
   uploadView.style.display = 'flex';
   statusBanner.classList.remove('visible');
@@ -1619,10 +1728,12 @@ function switchToUploadView() {
     el.classList.remove('active','done');
   });
 
-  // Clear messages
-  messagesWrap.innerHTML = '';
-  messagesWrap.appendChild(emptyChat);
-  state.messages = [];
+  if (!preserveChat) {
+    // Clear messages
+    messagesWrap.innerHTML = '';
+    messagesWrap.appendChild(emptyChat);
+    state.messages = [];
+  }
 
   disableInput();
 }
@@ -1807,6 +1918,17 @@ function renderMarkdown(text) {
 
 
 /* ============================================================
+   ADD FILES
+============================================================ */
+function setupAddFiles() {
+  if (!addFilesBtn) return;
+  addFilesBtn.addEventListener('click', () => {
+    if (state.uploading) return;
+    switchToUploadView({ preserveChat: true });
+  });
+}
+
+/* ============================================================
    RESET
 ============================================================ */
 function setupReset() {
@@ -1831,9 +1953,11 @@ function setupReset() {
     state.messages  = [];
     state.chunks    = 0;
     state.images    = 0;
+    state.files     = [];
     state.thread_id = null;
 
     switchToUploadView();
+    renderUploads();
     showToast('Index and chat cleared', 'info');
   });
 
