@@ -10,8 +10,19 @@ from sklearn.metrics.pairwise import cosine_similarity
 from PIL import Image
 from sentence_transformers import SentenceTransformer
 
-# Use the new OpenAI client. Ensure OPENAI_API_KEY is set in environment or .env.
-client = OpenAI()
+_client = None
+
+
+def _get_openai_client() -> OpenAI:
+    global _client
+    if _client is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                "OPENAI_API_KEY is not set. Set it in your environment or in a .env file."
+            )
+        _client = OpenAI(api_key=api_key)
+    return _client
 
 SYSTEM_PROMPT = """
 You are an advanced Vision-RAG assistant designed to answer questions strictly using the
@@ -62,10 +73,8 @@ def encode_image_b64(path):
 
 def get_embedding(text: str, model: str = "text-embedding-3-small") -> List[float]:
     """Get embedding for a single text."""
-    response = client.embeddings.create(
-        input=[text],
-        model=model
-    )
+    client = _get_openai_client()
+    response = client.embeddings.create(input=[text], model=model)
     return response.data[0].embedding
 
 _clip_model = None
@@ -183,12 +192,13 @@ def cross_modal_rerank(question: str, passages: List[Dict], images: List[Dict]) 
     return result
 
 def _create_chat_completion(messages, model, stream):
+    client = _get_openai_client()
     return client.chat.completions.create(
         model=model,
         messages=messages,
         temperature=0.7,
         max_tokens=1000,
-        stream=stream
+        stream=stream,
     )
 
 def query_openai_chat(passages, images, question, model="gpt-4o-mini", use_reranking=True, chat_history=None, stream=False):

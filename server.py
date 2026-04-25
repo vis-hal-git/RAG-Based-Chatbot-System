@@ -32,6 +32,15 @@ except Exception:
 load_dotenv()
 
 app = FastAPI(title="RAG-Based Chatbot System API")
+
+@app.on_event("startup")
+async def _validate_required_env() -> None:
+    has_key = bool(os.getenv("OPENAI_API_KEY"))
+    if not has_key:
+        raise RuntimeError(
+            "OPENAI_API_KEY is not set (required). If using Docker Compose, ensure you run it from the project folder and that a .env file exists next to docker-compose.yml."
+        )
+
 CONTEXT_ROOT = Path(os.getcwd()) / "thread_contexts"
 CONTEXT_ROOT.mkdir(parents=True, exist_ok=True)
 

@@ -61,11 +61,11 @@ pip install -r requirements.txt
 
 ### 2. Environment Configurations
 
-You must specify a few critical keys in an active `.env` file located at the root of the project:
+You must specify a few critical keys in an active `.env` file located at the root of the project (you can start from `.env.example`):
 
 ```env
 # Required for text-generation & core vector embeddings
-OPENAI_API_KEY="sk-proj-YourKeyHere"
+OPENAI_API_KEY="YOUR_OPENAI_API_KEY"
 OPENAI_VISION_MODEL="gpt-4o-mini"
 
 # Required for thread persistence in the UI 

@@ -1,4 +1,7 @@
 .env
 __pycache__/
 extracted_images/
+thread_contexts/
+faiss_index/
 venv/
+.venv/
