@@ -2,7 +2,7 @@
 from rank_bm25 import BM25Okapi
 import numpy as np
 from typing import List, Dict, Any
-from llm_query import get_embedding
+from vectorstore_utils import make_embeddings
 from sklearn.metrics.pairwise import cosine_similarity
 
 def build_bm25_corpus(chunks: List[Dict[str,Any]]):
@@ -11,16 +11,18 @@ def build_bm25_corpus(chunks: List[Dict[str,Any]]):
     return bm25, tokenized
 
 def dense_scores(query: str, chunks: List[Dict[str,Any]]):
-    q_emb = np.array(get_embedding(query))
-    scores = []
-    for c in chunks:
-        try:
-            emb = np.array(get_embedding(c["content"][:2000]))
-            sim = float(cosine_similarity(q_emb.reshape(1,-1), emb.reshape(1,-1))[0][0])
-        except Exception:
-            sim = 0.0
-        scores.append(sim)
-    return np.array(scores)
+    if not chunks:
+        return np.array([])
+    embedder = make_embeddings()
+    q_emb = np.array(embedder.embed_query(query))
+    texts_to_embed = [c["content"][:2000] for c in chunks]
+    try:
+        embs = np.array(embedder.embed_documents(texts_to_embed))
+        scores = cosine_similarity(q_emb.reshape(1, -1), embs)[0]
+    except Exception as e:
+        print(f"Error in dense embedding: {e}")
+        scores = np.zeros(len(chunks))
+    return scores
 
 def reciprocal_rank_fusion(bm25_scores, dense_scores, k=10):
     """

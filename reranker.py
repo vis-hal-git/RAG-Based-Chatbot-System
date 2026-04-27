@@ -2,7 +2,7 @@
 import numpy as np
 from typing import List, Dict, Any
 from sklearn.metrics.pairwise import cosine_similarity
-from llm_query import get_embedding, get_image_embedding
+from llm_query import get_embedding
 
 def cross_modal_rerank(question: str,
                        text_items: List[Dict[str,Any]],
@@ -36,17 +36,9 @@ def cross_modal_rerank(question: str,
             sim = 0.0
         scored.append({"type":"text","score": text_weight*sim, "item": t})
 
-    # score image items
+    # score image items (no local CLIP, assign default score to pass through)
     for im in image_items:
-        ip = im.get("image_path") or im.get("meta", {}).get("image_path")
-        if not ip:
-            continue
-        try:
-            emb = np.array(get_image_embedding(ip))
-            sim = float(cosine_similarity(q_emb.reshape(1,-1), emb.reshape(1,-1))[0][0])
-        except Exception:
-            sim = 0.0
-        scored.append({"type":"image","score": image_weight*sim, "item": im})
+        scored.append({"type":"image","score": 0.0, "item": im})
 
     # sort by score desc and return underlying items
     scored = sorted(scored, key=lambda x: x["score"], reverse=True)
