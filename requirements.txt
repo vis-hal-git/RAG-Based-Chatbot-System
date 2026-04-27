@@ -15,12 +15,10 @@ faiss-cpu
 pdfplumber
 pytesseract
 Pillow
-pdf2image
-camelot-py[cv]
+
 
 python-dotenv
-tqdm
-pandas
+
 numpy
 scikit-learn
 rank_bm25
